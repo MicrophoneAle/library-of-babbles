@@ -1,0 +1,19 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: dark;
+}
+
+body {
+  @apply bg-library-wall text-parchment antialiased;
+}
+
+.wood-panel {
+  background: linear-gradient(90deg, #2a170d 0%, #4a2f21 35%, #6e4735 50%, #4a2f21 65%, #2a170d 100%);
+}
+
+.gold-sign {
+  background: linear-gradient(135deg, #8a6329, #b68d40 35%, #f2d287 55%, #b68d40 75%, #7e5923);
+}
