@@ -17,10 +17,10 @@ function Doorway({ label, href, className }: DoorwayProps) {
       </div>
       <Link
         href={href}
-        className="group relative block h-48 rounded-b-[2.2rem] border border-amber-100/25 bg-gradient-to-b from-black/45 to-black/65 p-2 transition hover:scale-[1.02]"
+        className="group relative block h-52 rounded-b-[2.2rem] border border-amber-100/25 bg-gradient-to-b from-black/35 to-black/75 p-2 transition hover:scale-[1.02]"
       >
-        <div className="absolute inset-[10px] rounded-b-[1.8rem] border border-amber-100/15 bg-black/30" />
-        <div className="absolute inset-x-[24%] bottom-6 h-28 rounded-md border border-amber-200/20 bg-gradient-to-b from-[#4c2e20] to-[#2f1d14] shadow-2xl" />
+        <div className="absolute inset-[10px] rounded-b-[1.8rem] border border-amber-100/15 bg-[radial-gradient(ellipse_at_top,rgba(236,220,178,0.16),rgba(0,0,0,0.5)_56%)]" />
+        <div className="absolute inset-x-[24%] bottom-6 h-30 rounded-md border border-amber-200/20 bg-gradient-to-b from-[#5d3a28] to-[#342015] shadow-2xl" />
         <div className="absolute left-1/2 top-1/2 h-7 w-7 -translate-x-1/2 -translate-y-1/2 rounded-full border border-amber-200/45 bg-gradient-to-br from-amber-100 to-amber-500/80 shadow-glow" />
         <span className="absolute inset-x-0 bottom-2 text-center text-xs uppercase tracking-[0.2em] text-amber-100/80">
           Enter
@@ -42,35 +42,49 @@ function ReadingTable({ className = "" }: { className?: string }) {
 
 export default function LobbyPage() {
   return (
-    <section className="relative h-[calc(100vh-57px)] w-full overflow-hidden">
+    <section className="relative h-[calc(100vh-57px)] w-full overflow-hidden [perspective:1200px]">
       <div className="absolute inset-0 bg-gradient-to-b from-[#e9ddc6] via-[#cdb48f] to-[#8b6444]" />
       <div className="absolute inset-x-0 top-0 h-[58%] bg-[radial-gradient(ellipse_at_top,rgba(255,255,255,0.65),rgba(231,220,194,0.18)_58%,transparent_80%)]" />
       <div className="absolute inset-x-0 bottom-0 h-[44%] bg-gradient-to-t from-[#7d5739] via-[#9d744f] to-transparent" />
-      <div className="absolute left-1/2 top-[53%] h-[22rem] w-[92%] -translate-x-1/2 rounded-[50%] border border-[#e5cfaa]/30 bg-[#5d3f2b]/25" />
-      <div className="absolute left-1/2 top-[37%] h-[42%] w-[88%] -translate-x-1/2 rounded-[45%] border border-[#f2e5cd]/25 bg-[#a88361]/20" />
+      <div className="absolute left-1/2 top-[58%] h-[28rem] w-[98%] -translate-x-1/2 rounded-[50%] border border-[#e5cfaa]/30 bg-[#5d3f2b]/20 [transform:rotateX(69deg)]" />
+      <div className="absolute left-1/2 top-[36%] h-[46%] w-[92%] -translate-x-1/2 rounded-[48%] border border-[#f2e5cd]/30 bg-[#a88361]/15" />
 
       {/* Side shelf walls */}
-      <Bookshelf className="absolute left-5 top-12 w-72" compact />
-      <Bookshelf className="absolute right-5 top-12 w-72" compact />
-      <Bookshelf className="absolute left-10 bottom-16 w-64" compact />
-      <Bookshelf className="absolute right-10 bottom-16 w-64" compact />
+      <Bookshelf className="absolute left-[-3%] top-[18%] w-80 [transform:rotateY(36deg)_skewY(-3deg)]" compact />
+      <Bookshelf className="absolute right-[-3%] top-[18%] w-80 [transform:rotateY(-36deg)_skewY(3deg)]" compact />
+      <Bookshelf className="absolute left-[1%] bottom-[10%] w-72 [transform:rotateY(32deg)] opacity-95" compact />
+      <Bookshelf className="absolute right-[1%] bottom-[10%] w-72 [transform:rotateY(-32deg)] opacity-95" compact />
 
       {/* Grand sky window */}
       <div className="absolute left-1/2 top-3 w-[30rem] -translate-x-1/2 opacity-95">
         <WindowLight />
       </div>
 
-      {/* Upper doorways */}
-      <Doorway label="ABOUT WING" href="/about" className="absolute left-[24%] top-[30%] w-64 -translate-x-1/2" />
-      <Doorway label="PROJECTS WING" href="/projects" className="absolute left-[76%] top-[30%] w-64 -translate-x-1/2" />
-
-      {/* Lower doorways */}
-      <Doorway label="BLOG ALCOVE" href="/blog" className="absolute left-[27%] top-[61%] w-60 -translate-x-1/2" />
-      <Doorway label="LIBRARY RECORDS" href="/books" className="absolute left-[73%] top-[61%] w-60 -translate-x-1/2" />
+      {/* Corridor openings with perspective */}
+      <Doorway
+        label="ABOUT WING"
+        href="/about"
+        className="absolute left-[20%] top-[33%] w-60 -translate-x-1/2 [transform:rotateY(18deg)_skewY(-2deg)]"
+      />
+      <Doorway
+        label="PROJECTS WING"
+        href="/projects"
+        className="absolute left-[80%] top-[33%] w-60 -translate-x-1/2 [transform:rotateY(-18deg)_skewY(2deg)]"
+      />
+      <Doorway
+        label="BLOG ALCOVE"
+        href="/blog"
+        className="absolute left-[32%] top-[62%] w-52 -translate-x-1/2 [transform:rotateY(10deg)]"
+      />
+      <Doorway
+        label="LIBRARY RECORDS"
+        href="/books"
+        className="absolute left-[68%] top-[62%] w-52 -translate-x-1/2 [transform:rotateY(-10deg)]"
+      />
 
       {/* Center staircase leading upward */}
-      <div className="absolute left-1/2 top-[46%] w-[28rem] -translate-x-1/2">
-        <div className="space-y-[5px]">
+      <div className="absolute left-1/2 top-[44%] w-[30rem] -translate-x-1/2">
+        <div className="space-y-[4px] [transform:perspective(900px)_rotateX(58deg)]">
           {Array.from({ length: 8 }).map((_, idx) => (
             <div
               key={idx}
@@ -82,14 +96,14 @@ export default function LobbyPage() {
       </div>
 
       {/* Furniture cluster */}
-      <div className="absolute left-1/2 bottom-[15%] z-10 grid w-[42rem] -translate-x-1/2 grid-cols-3 gap-5">
-        <ReadingTable />
-        <ReadingTable className="translate-y-4" />
-        <ReadingTable />
+      <div className="absolute left-1/2 bottom-[14%] z-10 grid w-[46rem] -translate-x-1/2 grid-cols-3 gap-8">
+        <ReadingTable className="[transform:rotate(-8deg)]" />
+        <ReadingTable className="translate-y-4 [transform:rotate(0deg)]" />
+        <ReadingTable className="[transform:rotate(8deg)]" />
       </div>
 
       {/* Center lectern */}
-      <div className="absolute left-1/2 bottom-[11%] z-20 w-[30rem] -translate-x-1/2">
+      <div className="absolute left-1/2 bottom-[6%] z-20 w-[30rem] -translate-x-1/2">
         <Lectern />
       </div>
 
