@@ -28,7 +28,7 @@ export default function RootLayout({
     <html lang="en">
       <body className={`${cinzel.variable} ${cormorant.variable} min-h-screen font-serif`}>
         <Navbar />
-        <main className="mx-auto max-w-6xl px-4 pb-16 pt-6">
+        <main className="min-h-[calc(100vh-57px)] w-full">
           <PageTransition>{children}</PageTransition>
         </main>
       </body>

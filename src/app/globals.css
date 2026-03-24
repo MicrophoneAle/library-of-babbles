@@ -11,7 +11,17 @@ body {
 }
 
 .wood-panel {
-  background: linear-gradient(90deg, #2a170d 0%, #4a2f21 35%, #6e4735 50%, #4a2f21 65%, #2a170d 100%);
+  background:
+    radial-gradient(circle at 30% 50%, rgba(142, 97, 61, 0.32), transparent 35%),
+    radial-gradient(circle at 70% 20%, rgba(80, 49, 30, 0.4), transparent 40%),
+    repeating-linear-gradient(
+      90deg,
+      #2a1a12 0px,
+      #3f291c 8px,
+      #5a3b2a 18px,
+      #4b2f22 27px,
+      #2b1b12 36px
+    );
 }
 
 .gold-sign {

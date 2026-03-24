@@ -1,90 +1,102 @@
 import Bookshelf from "@/components/lobby/Bookshelf";
-import GoldSign from "@/components/lobby/GoldSign";
 import Lectern from "@/components/lobby/Lectern";
-import Vine from "@/components/lobby/Vine";
 import WindowLight from "@/components/lobby/WindowLight";
+import Link from "next/link";
+
+interface DoorwayProps {
+  label: string;
+  href: string;
+  className: string;
+}
+
+function Doorway({ label, href, className }: DoorwayProps) {
+  return (
+    <div className={className}>
+      <div className="gold-sign mb-3 rounded border border-amber-200/35 px-3 py-1 text-center text-sm font-semibold tracking-wide text-walnut">
+        {label}
+      </div>
+      <Link
+        href={href}
+        className="group relative block h-48 rounded-b-[2.2rem] border border-amber-100/25 bg-gradient-to-b from-black/45 to-black/65 p-2 transition hover:scale-[1.02]"
+      >
+        <div className="absolute inset-[10px] rounded-b-[1.8rem] border border-amber-100/15 bg-black/30" />
+        <div className="absolute inset-x-[24%] bottom-6 h-28 rounded-md border border-amber-200/20 bg-gradient-to-b from-[#4c2e20] to-[#2f1d14] shadow-2xl" />
+        <div className="absolute left-1/2 top-1/2 h-7 w-7 -translate-x-1/2 -translate-y-1/2 rounded-full border border-amber-200/45 bg-gradient-to-br from-amber-100 to-amber-500/80 shadow-glow" />
+        <span className="absolute inset-x-0 bottom-2 text-center text-xs uppercase tracking-[0.2em] text-amber-100/80">
+          Enter
+        </span>
+      </Link>
+    </div>
+  );
+}
+
+function ReadingTable({ className = "" }: { className?: string }) {
+  return (
+    <div className={`relative h-12 rounded-md border border-[#c8ad7f]/55 bg-[#9e754f]/65 shadow-xl ${className}`}>
+      <div className="absolute inset-x-3 top-2 h-2 rounded bg-[#d6bb8c]/65" />
+      <div className="absolute left-5 top-8 h-8 w-2 rounded bg-[#7b573b]" />
+      <div className="absolute right-5 top-8 h-8 w-2 rounded bg-[#7b573b]" />
+    </div>
+  );
+}
 
 export default function LobbyPage() {
   return (
-    <section className="space-y-8">
-      <header className="text-center">
-        <h1 className="text-4xl font-bold text-amber-100">First-Floor Lobby</h1>
-        <p className="mx-auto mt-3 max-w-2xl text-parchment/85">
-          A vaulted room of warm wood and brass. Pathways branch to each wing while the central
-          lectern welcomes visitors.
-        </p>
-      </header>
+    <section className="relative h-[calc(100vh-57px)] w-full overflow-hidden">
+      <div className="absolute inset-0 bg-gradient-to-b from-[#e9ddc6] via-[#cdb48f] to-[#8b6444]" />
+      <div className="absolute inset-x-0 top-0 h-[58%] bg-[radial-gradient(ellipse_at_top,rgba(255,255,255,0.65),rgba(231,220,194,0.18)_58%,transparent_80%)]" />
+      <div className="absolute inset-x-0 bottom-0 h-[44%] bg-gradient-to-t from-[#7d5739] via-[#9d744f] to-transparent" />
+      <div className="absolute left-1/2 top-[53%] h-[22rem] w-[92%] -translate-x-1/2 rounded-[50%] border border-[#e5cfaa]/30 bg-[#5d3f2b]/25" />
+      <div className="absolute left-1/2 top-[37%] h-[42%] w-[88%] -translate-x-1/2 rounded-[45%] border border-[#f2e5cd]/25 bg-[#a88361]/20" />
 
-      <div className="relative mx-auto h-[48rem] max-w-6xl overflow-hidden rounded-2xl border border-amber-100/15 bg-[#2a1a12] shadow-2xl">
-        <div className="absolute inset-0 bg-gradient-to-b from-[#6a4a2b] via-[#3d2718] to-[#23150f]" />
-        <div className="absolute inset-x-0 bottom-0 h-1/3 bg-gradient-to-t from-[#2a1a11] to-[#4a3020]" />
-        <div className="absolute left-1/2 top-[54%] h-[22rem] w-[95%] -translate-x-1/2 rounded-[50%] border border-amber-100/10 bg-black/20" />
+      {/* Side shelf walls */}
+      <Bookshelf className="absolute left-5 top-12 w-72" compact />
+      <Bookshelf className="absolute right-5 top-12 w-72" compact />
+      <Bookshelf className="absolute left-10 bottom-16 w-64" compact />
+      <Bookshelf className="absolute right-10 bottom-16 w-64" compact />
 
-        {/* Side bookshelves */}
-        <Bookshelf className="absolute left-6 top-10 w-56" compact />
-        <Bookshelf className="absolute right-6 top-10 w-56" compact />
-        <Vine className="absolute left-3 top-8" />
-        <Vine className="absolute right-3 top-8 scale-x-[-1]" />
+      {/* Grand sky window */}
+      <div className="absolute left-1/2 top-3 w-[30rem] -translate-x-1/2 opacity-95">
+        <WindowLight />
+      </div>
 
-        {/* Warm window glow */}
-        <div className="absolute left-1/2 top-8 w-80 -translate-x-1/2">
-          <WindowLight />
+      {/* Upper doorways */}
+      <Doorway label="ABOUT WING" href="/about" className="absolute left-[24%] top-[30%] w-64 -translate-x-1/2" />
+      <Doorway label="PROJECTS WING" href="/projects" className="absolute left-[76%] top-[30%] w-64 -translate-x-1/2" />
+
+      {/* Lower doorways */}
+      <Doorway label="BLOG ALCOVE" href="/blog" className="absolute left-[27%] top-[61%] w-60 -translate-x-1/2" />
+      <Doorway label="LIBRARY RECORDS" href="/books" className="absolute left-[73%] top-[61%] w-60 -translate-x-1/2" />
+
+      {/* Center staircase leading upward */}
+      <div className="absolute left-1/2 top-[46%] w-[28rem] -translate-x-1/2">
+        <div className="space-y-[5px]">
+          {Array.from({ length: 8 }).map((_, idx) => (
+            <div
+              key={idx}
+              className="mx-auto h-3 rounded border border-[#ecd8b7]/35 bg-[#7a5437]"
+              style={{ width: `${100 - idx * 8}%` }}
+            />
+          ))}
         </div>
+      </div>
 
-        {/* 3D doorway openings and signs */}
-        <div className="absolute left-1/2 top-[30%] grid w-[75%] -translate-x-1/2 grid-cols-2 gap-8">
-          <div>
-            <div className="gold-sign mb-2 rounded px-3 py-1 text-center text-sm font-semibold text-walnut">
-              ABOUT WING
-            </div>
-            <div className="h-40 rounded-b-[2rem] border border-amber-100/20 bg-black/35 p-2">
-              <GoldSign label="Enter About" href="/about" />
-            </div>
-          </div>
-          <div>
-            <div className="gold-sign mb-2 rounded px-3 py-1 text-center text-sm font-semibold text-walnut">
-              PROJECTS WING
-            </div>
-            <div className="h-40 rounded-b-[2rem] border border-amber-100/20 bg-black/35 p-2">
-              <GoldSign label="Enter Projects" href="/projects" />
-            </div>
-          </div>
-        </div>
+      {/* Furniture cluster */}
+      <div className="absolute left-1/2 bottom-[15%] z-10 grid w-[42rem] -translate-x-1/2 grid-cols-3 gap-5">
+        <ReadingTable />
+        <ReadingTable className="translate-y-4" />
+        <ReadingTable />
+      </div>
 
-        <div className="absolute left-1/2 top-[64%] grid w-[75%] -translate-x-1/2 grid-cols-2 gap-8">
-          <div>
-            <div className="gold-sign mb-2 rounded px-3 py-1 text-center text-sm font-semibold text-walnut">
-              BLOG ALCOVE
-            </div>
-            <div className="h-32 rounded-b-[2rem] border border-amber-100/20 bg-black/35 p-2">
-              <GoldSign label="Enter Blog" href="/blog" />
-            </div>
-          </div>
-          <div>
-            <div className="gold-sign mb-2 rounded px-3 py-1 text-center text-sm font-semibold text-walnut">
-              LIBRARY RECORDS
-            </div>
-            <div className="h-32 rounded-b-[2rem] border border-amber-100/20 bg-black/35 p-2">
-              <GoldSign label="Enter Books" href="/books" />
-            </div>
-          </div>
-        </div>
+      {/* Center lectern */}
+      <div className="absolute left-1/2 bottom-[11%] z-20 w-[30rem] -translate-x-1/2">
+        <Lectern />
+      </div>
 
-        {/* Center lectern */}
-        <div className="absolute left-1/2 top-[54%] z-10 w-[26rem] -translate-x-1/2">
-          <Lectern />
-        </div>
-
-        {/* Stairs to future floor, blocked */}
-        <div className="absolute left-1/2 bottom-8 w-[26rem] -translate-x-1/2">
-          <div className="space-y-1">
-            {Array.from({ length: 6 }).map((_, idx) => (
-              <div key={idx} className="h-3 rounded border border-amber-200/10 bg-[#3a2418]" />
-            ))}
-          </div>
-          <div className="mt-3 rounded-md border border-red-300/40 bg-red-900/45 px-3 py-2 text-center text-sm font-semibold text-red-200">
-            Upper Floor Staircase - Under Construction
-          </div>
+      {/* Under-construction marker for higher floors */}
+      <div className="absolute left-1/2 top-[43%] z-20 w-[25rem] -translate-x-1/2">
+        <div className="rounded-md border border-yellow-600/55 bg-yellow-100/75 px-4 py-2 text-center text-sm font-semibold tracking-wide text-yellow-900 shadow-lg">
+          CAUTION - UPPER FLOOR UNDER CONSTRUCTION
         </div>
       </div>
     </section>

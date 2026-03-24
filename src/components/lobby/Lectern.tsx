@@ -9,11 +9,11 @@ export default function Lectern() {
   return (
     <div className="relative">
       <button
-        className="mx-auto block w-full max-w-sm rounded-lg border border-amber-100/20 bg-gradient-to-b from-mahogany to-walnut p-4 text-left shadow-xl transition hover:scale-[1.01]"
+        className="mx-auto block w-full max-w-sm rounded-lg border border-[#d9bf91]/45 bg-gradient-to-b from-[#b4865b] to-[#7a5338] p-4 text-left shadow-xl transition hover:scale-[1.01]"
         onClick={() => setOpen((prev) => !prev)}
         type="button"
       >
-        <p className="text-xs uppercase tracking-[0.2em] text-amber-200/80">Grand Lectern</p>
+        <p className="text-xs uppercase tracking-[0.2em] text-amber-50/90">Grand Lectern</p>
         <p className="mt-2 text-lg font-semibold">Open the Introduction Tome</p>
       </button>
 
@@ -23,7 +23,7 @@ export default function Lectern() {
             initial={{ opacity: 0, y: 8 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: 8 }}
-            className="mt-3 rounded-lg border border-amber-100/15 bg-walnut/95 p-4"
+            className="mt-3 rounded-lg border border-[#dec39b]/45 bg-[#5f3f2b]/95 p-4"
           >
             <h3 className="font-semibold text-amber-100">Welcome, traveler.</h3>
             <p className="mt-2 text-sm text-parchment/90">
