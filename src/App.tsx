@@ -154,7 +154,11 @@ function LobbyRoom() {
     // already apply T(center) * R(pi) * T(-center); subtracting center from the
     // mesh as well shifts the visuals away from the physics colliders.
 
-    const floorSurfaceY = 2 * center.y - prepared.bounds.min.y;
+    // The 180° flip is around the bounds center, so the original ceiling
+    // (bounds.max.y) becomes the interior floor and lands at the BOTTOM of the
+    // world-space bounds: 2 * center.y - max.y (numerically equal to min.y).
+    // Using min.y here would put the floor/spawn on top of the roof.
+    const floorSurfaceY = 2 * center.y - prepared.bounds.max.y;
     const spawnPoint = new Vector3(
       center.x,
       // Clearance must exceed the character controller contact offset (0.08)
@@ -168,7 +172,8 @@ function LobbyRoom() {
       stairsCollider: prepared.stairsCollider,
       center,
       floorSize,
-      localFloorY: prepared.bounds.min.y,
+      // Local (pre-flip) Y of the surface that becomes the interior floor.
+      localFloorY: prepared.bounds.max.y,
       floorSurfaceY,
       spawnPoint,
     };
