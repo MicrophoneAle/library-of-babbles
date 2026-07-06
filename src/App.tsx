@@ -203,7 +203,14 @@ function LobbyRoom() {
           />
         </RigidBody>
         {layout.stairsCollider ? (
-          <RigidBody type="fixed" colliders="trimesh" friction={1}>
+          // includeInvisible is required: the collider clone's meshes are
+          // visible=false, and rapier skips invisible meshes by default.
+          <RigidBody
+            type="fixed"
+            colliders="trimesh"
+            friction={1}
+            includeInvisible
+          >
             <primitive object={layout.stairsCollider} />
           </RigidBody>
         ) : null}
