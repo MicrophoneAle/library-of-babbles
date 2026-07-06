@@ -13,7 +13,7 @@ import { Box3, Object3D, Quaternion, Vector3 } from "three";
 
 import { useGameStore } from "./store/gameStore";
 
-useGLTF.preload("/room_lobby.glb");
+useGLTF.preload("/assets/lobby/room_lobby.glb");
 
 const MOVE_SPEED = 5;
 const STANDING_EYE_HEIGHT = 1.6;
@@ -21,7 +21,8 @@ const CAPSULE_HALF_HEIGHT = 0.4;
 const CAPSULE_RADIUS = 0.3;
 const CAPSULE_BOTTOM_OFFSET = CAPSULE_HALF_HEIGHT + CAPSULE_RADIUS;
 const LOOK_SENSITIVITY = 0.002;
-const GROUND_SNAP_DISTANCE = 2;
+const GROUND_SNAP_DISTANCE = 0.2;
+const GROUND_RAY_LENGTH = 1.2;
 
 function useKeyboard() {
   const keys = useRef({
@@ -100,8 +101,9 @@ function prepareRoomContent(source: Object3D) {
   const room = source.clone(true);
   room.updateMatrixWorld(true);
 
-  const stairsSource = findStairsNode(room);
-  let extractedStairs: Object3D | null = null;
+  const sketchfab = room.getObjectByName("Sketchfab_model");
+  const stairsSource = sketchfab ? findStairsNode(sketchfab) : findStairsNode(room);
+  let stairsCollider: Object3D | null = null;
 
   if (stairsSource) {
     const position = new Vector3();
@@ -109,31 +111,34 @@ function prepareRoomContent(source: Object3D) {
     const scale = new Vector3();
     stairsSource.matrixWorld.decompose(position, quaternion, scale);
 
-    extractedStairs = stairsSource.clone(true);
-    extractedStairs.position.copy(position);
-    extractedStairs.quaternion.copy(quaternion);
-    extractedStairs.scale.copy(scale);
-    extractedStairs.updateMatrixWorld(true);
+    const stairs = stairsSource.clone(true);
+    stairs.position.copy(position);
+    stairs.quaternion.copy(quaternion);
+    stairs.scale.copy(scale);
+    stairs.updateMatrixWorld(true);
+    room.add(stairs);
+
+    stairsCollider = stairs.clone(true);
+    stairsCollider.traverse((child) => {
+      if ((child as Object3D & { isMesh?: boolean }).isMesh) {
+        child.visible = false;
+      }
+    });
   }
 
-  const sketchfab = room.getObjectByName("Sketchfab_model");
   sketchfab?.parent?.remove(sketchfab);
-
-  if (extractedStairs) {
-    room.add(extractedStairs);
-  }
 
   const bounds = new Box3().setFromObject(room);
 
   return {
     room,
-    stairsCollider: extractedStairs ? extractedStairs.clone(true) : null,
+    stairsCollider,
     bounds,
   };
 }
 
 function LobbyRoom() {
-  const { scene } = useGLTF("/room_lobby.glb");
+  const { scene } = useGLTF("/assets/lobby/room_lobby.glb");
   const setSpawnPoint = useGameStore((state) => state.setSpawnPoint);
   const setFloorSurfaceY = useGameStore((state) => state.setFloorSurfaceY);
 
@@ -260,7 +265,7 @@ function Player() {
     const ray = new rapier.Ray(rayOrigin, { x: 0, y: -1, z: 0 });
     const hit = world.castRay(
       ray,
-      GROUND_SNAP_DISTANCE + CAPSULE_BOTTOM_OFFSET,
+      GROUND_RAY_LENGTH,
       true,
       undefined,
       undefined,
@@ -268,31 +273,32 @@ function Player() {
       body,
     );
 
-    let nextY = translation.y;
-    let nextVy = velocity.y;
+    let grounded = false;
+    let targetY = translation.y;
 
     if (hit) {
       const groundY = rayOrigin.y - hit.timeOfImpact;
-      const targetY = groundY + CAPSULE_BOTTOM_OFFSET;
-      nextY = targetY;
-      nextVy = 0;
+      targetY = groundY + CAPSULE_BOTTOM_OFFSET;
+      grounded =
+        translation.y - targetY <= GROUND_SNAP_DISTANCE && velocity.y <= 1;
 
-      if (Math.abs(translation.y - targetY) > 0.001) {
+      if (grounded) {
         body.setTranslation(
           { x: translation.x, y: targetY, z: translation.z },
           true,
         );
       }
-    } else if (floorSurfaceY > 0 && translation.y < floorSurfaceY) {
-      const targetY = floorSurfaceY + CAPSULE_BOTTOM_OFFSET;
-      nextY = targetY;
-      nextVy = 0;
+    } else if (floorSurfaceY > 0 && translation.y < floorSurfaceY - 2) {
+      targetY = floorSurfaceY + CAPSULE_BOTTOM_OFFSET;
+      grounded = true;
       body.setTranslation(
         { x: translation.x, y: targetY, z: translation.z },
         true,
       );
     }
 
+    const nextY = grounded ? targetY : translation.y;
+    const nextVy = grounded ? 0 : velocity.y;
     const feetY = nextY - CAPSULE_BOTTOM_OFFSET;
 
     camera.rotation.order = "YXZ";
@@ -301,7 +307,8 @@ function Player() {
     camera.rotation.z = 0;
     camera.position.set(
       translation.x,
-      feetY + STANDING_EYE_HEIGHT,
+      (grounded ? feetY : translation.y - CAPSULE_BOTTOM_OFFSET) +
+        STANDING_EYE_HEIGHT,
       translation.z,
     );
 
