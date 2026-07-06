@@ -1,4 +1,4 @@
-import { Environment, PointerLockControls, useGLTF } from "@react-three/drei";
+import { Environment, useGLTF } from "@react-three/drei";
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import {
   CapsuleCollider,
@@ -8,7 +8,7 @@ import {
   RigidBody,
 } from "@react-three/rapier";
 import { Suspense, useEffect, useMemo, useRef } from "react";
-import { Box3, Object3D, Vector3 } from "three";
+import { Box3, Object3D, Quaternion, Vector3 } from "three";
 
 import { useGameStore } from "./store/gameStore";
 
@@ -18,6 +18,7 @@ const MOVE_SPEED = 5;
 const EYE_HEIGHT = 1.7;
 const CAPSULE_HALF_HEIGHT = 0.4;
 const CAPSULE_RADIUS = 0.3;
+const LOOK_SENSITIVITY = 0.002;
 
 function useKeyboard() {
   const keys = useRef({
@@ -74,9 +75,52 @@ function useKeyboard() {
   return keys;
 }
 
-function stripImportedArtifacts(root: Object3D) {
-  const sketchfab = root.getObjectByName("Sketchfab_model");
+function findStairsNode(root: Object3D) {
+  let stairs: Object3D | null = null;
+
+  root.traverse((object) => {
+    if (
+      object.name === "Lobby_Stairs001" ||
+      object.name === "Lobby_Stairs.001" ||
+      object.name === "Lobby_Stairs"
+    ) {
+      if (!stairs || (object as Object3D & { isMesh?: boolean }).isMesh) {
+        stairs = object;
+      }
+    }
+  });
+
+  return stairs;
+}
+
+function prepareRoom(source: Object3D) {
+  const room = source.clone(true);
+  room.updateMatrixWorld(true);
+
+  const stairsSource = findStairsNode(room);
+  let extractedStairs: Object3D | null = null;
+
+  if (stairsSource) {
+    const position = new Vector3();
+    const quaternion = new Quaternion();
+    const scale = new Vector3();
+    stairsSource.matrixWorld.decompose(position, quaternion, scale);
+
+    extractedStairs = stairsSource.clone(true);
+    extractedStairs.position.copy(position);
+    extractedStairs.quaternion.copy(quaternion);
+    extractedStairs.scale.copy(scale);
+    extractedStairs.updateMatrixWorld(true);
+  }
+
+  const sketchfab = room.getObjectByName("Sketchfab_model");
   sketchfab?.parent?.remove(sketchfab);
+
+  if (extractedStairs) {
+    room.add(extractedStairs);
+  }
+
+  return room;
 }
 
 function resolveSpawnPoint(root: Object3D) {
@@ -113,9 +157,7 @@ function LobbyRoom() {
   const setSpawnPoint = useGameStore((state) => state.setSpawnPoint);
 
   const { room, floorSize } = useMemo(() => {
-    const roomScene = scene.clone(true);
-    stripImportedArtifacts(roomScene);
-
+    const roomScene = prepareRoom(scene);
     const floor = roomScene.getObjectByName("Lobby_Floor_Walls");
     const bounds = floor ? new Box3().setFromObject(floor) : new Box3();
     const size = bounds.getSize(new Vector3());
@@ -153,13 +195,60 @@ function Player() {
   const spawnPoint = useGameStore((state) => state.spawnPoint);
   const bodyRef = useRef<RapierRigidBody>(null);
   const keys = useKeyboard();
-  const { camera } = useThree();
+  const { camera, gl } = useThree();
   const hasSpawned = useRef(false);
+  const isPointerLocked = useRef(false);
+  const lookEuler = useRef({ x: 0, y: 0 });
 
   const forward = useMemo(() => new Vector3(), []);
   const right = useMemo(() => new Vector3(), []);
   const direction = useMemo(() => new Vector3(), []);
   const up = useMemo(() => new Vector3(0, 1, 0), []);
+
+  useEffect(() => {
+    const canvas = gl.domElement;
+
+    const onPointerLockChange = () => {
+      isPointerLocked.current = document.pointerLockElement === canvas;
+    };
+
+    const onMouseMove = (event: MouseEvent) => {
+      if (!isPointerLocked.current) {
+        return;
+      }
+
+      lookEuler.current.y -= event.movementX * LOOK_SENSITIVITY;
+      lookEuler.current.x -= event.movementY * LOOK_SENSITIVITY;
+      lookEuler.current.x = Math.max(
+        -Math.PI / 2 + 0.01,
+        Math.min(Math.PI / 2 - 0.01, lookEuler.current.x),
+      );
+
+      camera.rotation.order = "YXZ";
+      camera.rotation.y = lookEuler.current.y;
+      camera.rotation.x = lookEuler.current.x;
+    };
+
+    const onClick = () => {
+      if (document.pointerLockElement !== canvas) {
+        canvas.requestPointerLock();
+      }
+    };
+
+    canvas.addEventListener("click", onClick);
+    document.addEventListener("pointerlockchange", onPointerLockChange);
+    document.addEventListener("mousemove", onMouseMove);
+
+    return () => {
+      canvas.removeEventListener("click", onClick);
+      document.removeEventListener("pointerlockchange", onPointerLockChange);
+      document.removeEventListener("mousemove", onMouseMove);
+
+      if (document.pointerLockElement === canvas) {
+        document.exitPointerLock();
+      }
+    };
+  }, [camera, gl]);
 
   useEffect(() => {
     const body = bodyRef.current;
@@ -260,7 +349,6 @@ function Scene() {
       <ambientLight intensity={0.5} />
       <directionalLight position={[5, 10, 5]} intensity={1} />
       <Environment preset="apartment" />
-      <PointerLockControls />
       <Suspense fallback={null}>
         <LobbyRoom />
       </Suspense>
@@ -284,7 +372,10 @@ export default function App() {
   return (
     <>
       <Crosshair />
-      <Canvas>
+      <Canvas
+        style={{ width: "100vw", height: "100vh", display: "block" }}
+        camera={{ fov: 75, near: 0.1, far: 1000, position: [0, 1.7, 5] }}
+      >
         <Physics gravity={[0, -9.81, 0]}>
           <Scene />
         </Physics>
