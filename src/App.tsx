@@ -1,4 +1,4 @@
-import { Environment, useGLTF } from "@react-three/drei";
+import { Environment, PerspectiveCamera, useGLTF } from "@react-three/drei";
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import {
   CapsuleCollider,
@@ -7,7 +7,7 @@ import {
   RapierRigidBody,
   RigidBody,
 } from "@react-three/rapier";
-import { Suspense, useEffect, useMemo, useRef } from "react";
+import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { Box3, Object3D, Quaternion, Vector3 } from "three";
 
 import { useGameStore } from "./store/gameStore";
@@ -15,7 +15,7 @@ import { useGameStore } from "./store/gameStore";
 useGLTF.preload("/room_lobby.glb");
 
 const MOVE_SPEED = 5;
-const EYE_HEIGHT = 1.7;
+const STANDING_EYE_HEIGHT = 1.6;
 const CAPSULE_HALF_HEIGHT = 0.4;
 const CAPSULE_RADIUS = 0.3;
 const LOOK_SENSITIVITY = 0.002;
@@ -147,7 +147,7 @@ function resolveSpawnPoint(root: Object3D) {
 
   const bounds = new Box3().setFromObject(floor);
   const spawn = bounds.getCenter(new Vector3());
-  spawn.y = bounds.min.y + CAPSULE_HALF_HEIGHT + CAPSULE_RADIUS + 0.05;
+  spawn.y = bounds.min.y + CAPSULE_HALF_HEIGHT + CAPSULE_RADIUS + 0.1;
 
   return spawn;
 }
@@ -156,7 +156,7 @@ function LobbyRoom() {
   const { scene } = useGLTF("/room_lobby.glb");
   const setSpawnPoint = useGameStore((state) => state.setSpawnPoint);
 
-  const { room, floorSize } = useMemo(() => {
+  const { room, floorSize, floorY } = useMemo(() => {
     const roomScene = prepareRoom(scene);
     const floor = roomScene.getObjectByName("Lobby_Floor_Walls");
     const bounds = floor ? new Box3().setFromObject(floor) : new Box3();
@@ -165,6 +165,7 @@ function LobbyRoom() {
     return {
       room: roomScene,
       floorSize: size,
+      floorY: bounds.min.y,
     };
   }, [scene]);
 
@@ -174,17 +175,15 @@ function LobbyRoom() {
 
   return (
     <>
-      <RigidBody type="fixed" colliders="trimesh" friction={1}>
-        <primitive object={room} />
-      </RigidBody>
+      <primitive object={room} />
       <RigidBody type="fixed" colliders={false} friction={1}>
         <CuboidCollider
           args={[
             Math.max(floorSize.x * 0.5, 5),
-            0.1,
+            0.15,
             Math.max(floorSize.z * 0.5, 5),
           ]}
-          position={[0, -0.2, 0]}
+          position={[0, floorY + 0.15, 0]}
         />
       </RigidBody>
     </>
@@ -195,10 +194,10 @@ function Player() {
   const spawnPoint = useGameStore((state) => state.spawnPoint);
   const bodyRef = useRef<RapierRigidBody>(null);
   const keys = useKeyboard();
-  const { camera, gl } = useThree();
+  const { camera } = useThree();
   const hasSpawned = useRef(false);
-  const isPointerLocked = useRef(false);
-  const lookEuler = useRef({ x: 0, y: 0 });
+  const pitch = useRef(0);
+  const yaw = useRef(0);
 
   const forward = useMemo(() => new Vector3(), []);
   const right = useMemo(() => new Vector3(), []);
@@ -206,49 +205,25 @@ function Player() {
   const up = useMemo(() => new Vector3(0, 1, 0), []);
 
   useEffect(() => {
-    const canvas = gl.domElement;
-
-    const onPointerLockChange = () => {
-      isPointerLocked.current = document.pointerLockElement === canvas;
-    };
-
     const onMouseMove = (event: MouseEvent) => {
-      if (!isPointerLocked.current) {
+      if (document.pointerLockElement !== document.querySelector("canvas")) {
         return;
       }
 
-      lookEuler.current.y -= event.movementX * LOOK_SENSITIVITY;
-      lookEuler.current.x -= event.movementY * LOOK_SENSITIVITY;
-      lookEuler.current.x = Math.max(
+      yaw.current -= event.movementX * LOOK_SENSITIVITY;
+      pitch.current += event.movementY * LOOK_SENSITIVITY;
+      pitch.current = Math.max(
         -Math.PI / 2 + 0.01,
-        Math.min(Math.PI / 2 - 0.01, lookEuler.current.x),
+        Math.min(Math.PI / 2 - 0.01, pitch.current),
       );
-
-      camera.rotation.order = "YXZ";
-      camera.rotation.y = lookEuler.current.y;
-      camera.rotation.x = lookEuler.current.x;
     };
 
-    const onClick = () => {
-      if (document.pointerLockElement !== canvas) {
-        canvas.requestPointerLock();
-      }
-    };
-
-    canvas.addEventListener("click", onClick);
-    document.addEventListener("pointerlockchange", onPointerLockChange);
     document.addEventListener("mousemove", onMouseMove);
 
     return () => {
-      canvas.removeEventListener("click", onClick);
-      document.removeEventListener("pointerlockchange", onPointerLockChange);
       document.removeEventListener("mousemove", onMouseMove);
-
-      if (document.pointerLockElement === canvas) {
-        document.exitPointerLock();
-      }
     };
-  }, [camera, gl]);
+  }, []);
 
   useEffect(() => {
     const body = bodyRef.current;
@@ -272,9 +247,15 @@ function Player() {
     }
 
     const translation = body.translation();
+    const feetY = translation.y - CAPSULE_HALF_HEIGHT - CAPSULE_RADIUS;
+
+    camera.rotation.order = "YXZ";
+    camera.rotation.y = yaw.current;
+    camera.rotation.x = pitch.current;
+    camera.rotation.z = 0;
     camera.position.set(
       translation.x,
-      translation.y + EYE_HEIGHT,
+      feetY + STANDING_EYE_HEIGHT,
       translation.z,
     );
 
@@ -346,6 +327,7 @@ function Player() {
 function Scene() {
   return (
     <>
+      <PerspectiveCamera makeDefault fov={75} near={0.1} far={1000} />
       <ambientLight intensity={0.5} />
       <directionalLight position={[5, 10, 5]} intensity={1} />
       <Environment preset="apartment" />
@@ -359,7 +341,7 @@ function Scene() {
 
 function Crosshair() {
   return (
-    <div className="pointer-events-none fixed inset-0 z-10 flex items-center justify-center">
+    <div className="pointer-events-none fixed inset-0 z-10 flex items-center justify-center [&_*]:pointer-events-none">
       <div className="relative h-3 w-3">
         <div className="absolute left-1/2 top-0 h-full w-px -translate-x-1/2 bg-white/90" />
         <div className="absolute left-0 top-1/2 h-px w-full -translate-y-1/2 bg-white/90" />
@@ -368,13 +350,59 @@ function Crosshair() {
   );
 }
 
+function ClickToPlay({
+  isLocked,
+  onRequestLock,
+}: {
+  isLocked: boolean;
+  onRequestLock: () => void;
+}) {
+  if (isLocked) {
+    return null;
+  }
+
+  return (
+    <button
+      type="button"
+      className="fixed inset-0 z-20 flex cursor-pointer items-center justify-center bg-black/50 text-lg text-white"
+      onPointerDown={(event) => {
+        event.preventDefault();
+        onRequestLock();
+      }}
+    >
+      Click to enter the library
+    </button>
+  );
+}
+
 export default function App() {
+  const [isLocked, setIsLocked] = useState(false);
+
+  useEffect(() => {
+    const onPointerLockChange = () => {
+      const canvas = document.querySelector("canvas");
+      setIsLocked(document.pointerLockElement === canvas);
+    };
+
+    document.addEventListener("pointerlockchange", onPointerLockChange);
+
+    return () => {
+      document.removeEventListener("pointerlockchange", onPointerLockChange);
+    };
+  }, []);
+
+  const requestPointerLock = () => {
+    const canvas = document.querySelector("canvas");
+    canvas?.requestPointerLock();
+  };
+
   return (
     <>
-      <Crosshair />
+      <ClickToPlay isLocked={isLocked} onRequestLock={requestPointerLock} />
+      {isLocked ? <Crosshair /> : null}
       <Canvas
         style={{ width: "100vw", height: "100vh", display: "block" }}
-        camera={{ fov: 75, near: 0.1, far: 1000, position: [0, 1.7, 5] }}
+        gl={{ antialias: true }}
       >
         <Physics gravity={[0, -9.81, 0]}>
           <Scene />
