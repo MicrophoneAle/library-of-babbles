@@ -96,7 +96,7 @@ function findStairsNode(root: Object3D) {
   return stairs;
 }
 
-function prepareRoom(source: Object3D) {
+function prepareRoomContent(source: Object3D) {
   const room = source.clone(true);
   room.updateMatrixWorld(true);
 
@@ -132,76 +132,59 @@ function prepareRoom(source: Object3D) {
   };
 }
 
-function resolveSpawnPoint(root: Object3D) {
-  root.updateMatrixWorld(true);
-
-  let spawnMarker: Object3D | null = null;
-
-  root.traverse((object) => {
-    if (object.name.startsWith("SPAWN_")) {
-      spawnMarker = object;
-    }
-  });
-
-  if (spawnMarker) {
-    const position = new Vector3();
-    spawnMarker.getWorldPosition(position);
-    return position;
-  }
-
-  const floor = root.getObjectByName("Lobby_Floor_Walls");
-  if (!floor) {
-    return new Vector3(0, 1, 5);
-  }
-
-  const bounds = new Box3().setFromObject(floor);
-  const spawn = bounds.getCenter(new Vector3());
-  spawn.y = bounds.min.y + CAPSULE_BOTTOM_OFFSET + 0.1;
-
-  return spawn;
-}
-
 function LobbyRoom() {
   const { scene } = useGLTF("/room_lobby.glb");
   const setSpawnPoint = useGameStore((state) => state.setSpawnPoint);
 
-  const { room, stairsCollider, floorSize, floorY } = useMemo(() => {
-    const prepared = prepareRoom(scene);
-    const floor = prepared.room.getObjectByName("Lobby_Floor_Walls");
-    const bounds = floor ? new Box3().setFromObject(floor) : prepared.bounds;
-    const size = bounds.getSize(new Vector3());
+  const layout = useMemo(() => {
+    const prepared = prepareRoomContent(scene);
+    const center = prepared.bounds.getCenter(new Vector3());
+    const floorSize = prepared.bounds.getSize(new Vector3());
+
+    prepared.room.position.sub(center);
+
+    const walkableY = 2 * center.y - prepared.bounds.min.y;
+    const spawnPoint = new Vector3(
+      center.x,
+      walkableY - CAPSULE_BOTTOM_OFFSET - 0.1,
+      center.z,
+    );
 
     return {
       room: prepared.room,
       stairsCollider: prepared.stairsCollider,
-      floorSize: size,
-      floorY: bounds.min.y,
+      center,
+      floorSize,
+      localFloorY: prepared.bounds.min.y,
+      spawnPoint,
     };
   }, [scene]);
 
   useEffect(() => {
-    setSpawnPoint(resolveSpawnPoint(room));
-  }, [room, setSpawnPoint]);
+    setSpawnPoint(layout.spawnPoint);
+  }, [layout.spawnPoint, setSpawnPoint]);
 
   return (
-    <>
-      <primitive object={room} />
-      <RigidBody type="fixed" colliders={false} friction={1}>
-        <CuboidCollider
-          args={[
-            Math.max(floorSize.x * 0.5, 5),
-            0.15,
-            Math.max(floorSize.z * 0.5, 5),
-          ]}
-          position={[0, floorY + 0.15, 0]}
-        />
-      </RigidBody>
-      {stairsCollider ? (
-        <RigidBody type="fixed" colliders="trimesh" friction={1}>
-          <primitive object={stairsCollider} />
+    <group position={layout.center} rotation={[Math.PI, 0, 0]}>
+      <group position={[-layout.center.x, -layout.center.y, -layout.center.z]}>
+        <primitive object={layout.room} />
+        <RigidBody type="fixed" colliders={false} friction={1}>
+          <CuboidCollider
+            args={[
+              Math.max(layout.floorSize.x * 0.5, 5),
+              0.15,
+              Math.max(layout.floorSize.z * 0.5, 5),
+            ]}
+            position={[0, layout.localFloorY + 0.15, 0]}
+          />
         </RigidBody>
-      ) : null}
-    </>
+        {layout.stairsCollider ? (
+          <RigidBody type="fixed" colliders="trimesh" friction={1}>
+            <primitive object={layout.stairsCollider} />
+          </RigidBody>
+        ) : null}
+      </group>
+    </group>
   );
 }
 
@@ -227,7 +210,7 @@ function Player() {
       }
 
       yaw.current -= event.movementX * LOOK_SENSITIVITY;
-      pitch.current += event.movementY * LOOK_SENSITIVITY;
+      pitch.current -= event.movementY * LOOK_SENSITIVITY;
       pitch.current = Math.max(
         -Math.PI / 2 + 0.01,
         Math.min(Math.PI / 2 - 0.01, pitch.current),
