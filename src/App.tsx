@@ -18,6 +18,10 @@ import { useGameStore } from "./store/gameStore";
 useGLTF.preload("/assets/lobby/room_lobby.glb");
 
 const MOVE_SPEED = 5;
+const GRAVITY = -29.4;
+const TERMINAL_VELOCITY = -55;
+const GROUND_STICK = -0.1;
+const GROUND_TOLERANCE = 0.25;
 const STANDING_EYE_HEIGHT = 1.6;
 const CAPSULE_HALF_HEIGHT = 0.4;
 const CAPSULE_RADIUS = 0.3;
@@ -198,6 +202,7 @@ function LobbyRoom() {
 
 function Player() {
   const spawnPoint = useGameStore((state) => state.spawnPoint);
+  const floorSurfaceY = useGameStore((state) => state.floorSurfaceY);
   const bodyRef = useRef<RapierRigidBody>(null);
   const characterControllerRef = useRef<KinematicCharacterController | null>(null);
   const keys = useKeyboard();
@@ -208,11 +213,22 @@ function Player() {
   const yaw = useRef(0);
   const deltaRef = useRef(1 / 60);
   const moveDirection = useRef(new Vector3());
+  const vy = useRef(0);
+  const isGrounded = useRef(true);
 
   const forward = useMemo(() => new Vector3(), []);
   const right = useMemo(() => new Vector3(), []);
   const direction = useMemo(() => new Vector3(), []);
   const up = useMemo(() => new Vector3(0, 1, 0), []);
+
+  const isNearFloorSurface = (bodyY: number) => {
+    if (floorSurfaceY <= 0) {
+      return false;
+    }
+
+    const feetY = bodyY - CAPSULE_BOTTOM_OFFSET;
+    return Math.abs(feetY - floorSurfaceY) <= GROUND_TOLERANCE;
+  };
 
   useEffect(() => {
     const controller = world.createCharacterController(0.08);
@@ -258,6 +274,8 @@ function Player() {
       { x: spawnPoint.x, y: spawnPoint.y, z: spawnPoint.z },
       true,
     );
+    vy.current = 0;
+    isGrounded.current = true;
     hasSpawned.current = true;
   }, [spawnPoint]);
 
@@ -273,17 +291,37 @@ function Player() {
       return;
     }
 
+    const delta = deltaRef.current;
+    const position = body.translation();
+    const groundedBeforeStep =
+      isGrounded.current || isNearFloorSurface(position.y);
+
+    if (groundedBeforeStep) {
+      vy.current = GROUND_STICK;
+    } else {
+      vy.current += GRAVITY * delta;
+      vy.current = Math.max(vy.current, TERMINAL_VELOCITY);
+    }
+
     const move = moveDirection.current;
-    const speed = MOVE_SPEED * deltaRef.current;
+    const horizontalSpeed = MOVE_SPEED * delta;
 
     controller.computeColliderMovement(collider, {
-      x: move.x * speed,
-      y: 0,
-      z: move.z * speed,
+      x: move.x * horizontalSpeed,
+      y: vy.current * delta,
+      z: move.z * horizontalSpeed,
     });
 
     const step = controller.computedMovement();
-    const position = body.translation();
+    const groundedAfterStep =
+      controller.computedGrounded() ||
+      isNearFloorSurface(position.y + step.y);
+
+    isGrounded.current = groundedAfterStep;
+
+    if (groundedAfterStep) {
+      vy.current = GROUND_STICK;
+    }
 
     body.setNextKinematicTranslation({
       x: position.x + step.x,
