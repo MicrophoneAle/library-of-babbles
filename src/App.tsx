@@ -150,12 +150,16 @@ function LobbyRoom() {
     const center = prepared.bounds.getCenter(new Vector3());
     const floorSize = prepared.bounds.getSize(new Vector3());
 
-    prepared.room.position.sub(center);
+    // NOTE: do NOT offset prepared.room.position here. The nested groups below
+    // already apply T(center) * R(pi) * T(-center); subtracting center from the
+    // mesh as well shifts the visuals away from the physics colliders.
 
     const floorSurfaceY = 2 * center.y - prepared.bounds.min.y;
     const spawnPoint = new Vector3(
       center.x,
-      floorSurfaceY + CAPSULE_BOTTOM_OFFSET + 0.05,
+      // Clearance must exceed the character controller contact offset (0.08)
+      // so the capsule doesn't start the first step in penetration.
+      floorSurfaceY + CAPSULE_BOTTOM_OFFSET + 0.1,
       center.z,
     );
 
@@ -186,7 +190,11 @@ function LobbyRoom() {
               0.15,
               Math.max(layout.floorSize.z * 0.5, 5),
             ]}
-            position={[0, layout.localFloorY + 0.15, 0]}
+            position={[
+              layout.center.x,
+              layout.localFloorY + 0.15,
+              layout.center.z,
+            ]}
           />
         </RigidBody>
         {layout.stairsCollider ? (
@@ -209,7 +217,6 @@ function Player() {
   const hasSpawned = useRef(false);
   const pitch = useRef(0);
   const yaw = useRef(0);
-  const deltaRef = useRef(1 / 60);
   const moveDirection = useRef(new Vector3());
   /** Vertical velocity in m/s (not displacement). */
   const vy = useRef(0);
@@ -281,7 +288,10 @@ function Player() {
       return;
     }
 
-    const delta = deltaRef.current;
+    // The physics world steps at a fixed timestep (default 1/60), which is
+    // NOT the render delta. Integrating with the render delta under-applies
+    // gravity on high-refresh displays.
+    const delta = world.timestep;
 
     if (isGrounded.current) {
       vy.current = 0;
@@ -314,9 +324,7 @@ function Player() {
     }
   });
 
-  useFrame((_, delta) => {
-    deltaRef.current = delta;
-
+  useFrame(() => {
     const body = bodyRef.current;
     if (!body || !hasSpawned.current) {
       return;
