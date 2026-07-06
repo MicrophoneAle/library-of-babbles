@@ -6,9 +6,11 @@ import {
   Physics,
   RapierRigidBody,
   RigidBody,
+  useBeforePhysicsStep,
   useRapier,
 } from "@react-three/rapier";
 import { Suspense, useEffect, useMemo, useRef } from "react";
+import type { KinematicCharacterController } from "@dimforge/rapier3d-compat";
 import { Box3, Object3D, Quaternion, Vector3 } from "three";
 
 import { useGameStore } from "./store/gameStore";
@@ -21,8 +23,6 @@ const CAPSULE_HALF_HEIGHT = 0.4;
 const CAPSULE_RADIUS = 0.3;
 const CAPSULE_BOTTOM_OFFSET = CAPSULE_HALF_HEIGHT + CAPSULE_RADIUS;
 const LOOK_SENSITIVITY = 0.002;
-const GROUND_SNAP_DISTANCE = 0.2;
-const GROUND_RAY_LENGTH = 1.2;
 
 function useKeyboard() {
   const keys = useRef({
@@ -198,19 +198,34 @@ function LobbyRoom() {
 
 function Player() {
   const spawnPoint = useGameStore((state) => state.spawnPoint);
-  const floorSurfaceY = useGameStore((state) => state.floorSurfaceY);
   const bodyRef = useRef<RapierRigidBody>(null);
+  const characterControllerRef = useRef<KinematicCharacterController | null>(null);
   const keys = useKeyboard();
   const { camera } = useThree();
-  const { world, rapier } = useRapier();
+  const { world } = useRapier();
   const hasSpawned = useRef(false);
   const pitch = useRef(0);
   const yaw = useRef(0);
+  const deltaRef = useRef(1 / 60);
+  const moveDirection = useRef(new Vector3());
 
   const forward = useMemo(() => new Vector3(), []);
   const right = useMemo(() => new Vector3(), []);
   const direction = useMemo(() => new Vector3(), []);
   const up = useMemo(() => new Vector3(0, 1, 0), []);
+
+  useEffect(() => {
+    const controller = world.createCharacterController(0.08);
+    controller.enableSnapToGround(0.45);
+    controller.enableAutostep(0.55, 0.25, true);
+    controller.setMaxSlopeClimbAngle((50 * Math.PI) / 180);
+    characterControllerRef.current = controller;
+
+    return () => {
+      world.removeCharacterController(controller);
+      characterControllerRef.current = null;
+    };
+  }, [world]);
 
   useEffect(() => {
     const onMouseMove = (event: MouseEvent) => {
@@ -243,63 +258,50 @@ function Player() {
       { x: spawnPoint.x, y: spawnPoint.y, z: spawnPoint.z },
       true,
     );
-    body.setLinvel({ x: 0, y: 0, z: 0 }, true);
-    body.wakeUp();
     hasSpawned.current = true;
   }, [spawnPoint]);
 
-  useFrame(() => {
+  useBeforePhysicsStep(() => {
     const body = bodyRef.current;
-    if (!body || !hasSpawned.current || floorSurfaceY <= 0) {
+    const controller = characterControllerRef.current;
+    if (!body || !controller || !hasSpawned.current) {
+      return;
+    }
+
+    const collider = body.collider(0);
+    if (!collider) {
+      return;
+    }
+
+    const move = moveDirection.current;
+    const speed = MOVE_SPEED * deltaRef.current;
+
+    controller.computeColliderMovement(collider, {
+      x: move.x * speed,
+      y: 0,
+      z: move.z * speed,
+    });
+
+    const step = controller.computedMovement();
+    const position = body.translation();
+
+    body.setNextKinematicTranslation({
+      x: position.x + step.x,
+      y: position.y + step.y,
+      z: position.z + step.z,
+    });
+  });
+
+  useFrame((_, delta) => {
+    deltaRef.current = delta;
+
+    const body = bodyRef.current;
+    if (!body || !hasSpawned.current) {
       return;
     }
 
     const translation = body.translation();
-    const velocity = body.linvel();
-
-    const rayOrigin = {
-      x: translation.x,
-      y: translation.y + CAPSULE_HALF_HEIGHT,
-      z: translation.z,
-    };
-    const ray = new rapier.Ray(rayOrigin, { x: 0, y: -1, z: 0 });
-    const hit = world.castRay(
-      ray,
-      GROUND_RAY_LENGTH,
-      true,
-      undefined,
-      undefined,
-      undefined,
-      body,
-    );
-
-    let grounded = false;
-    let targetY = translation.y;
-
-    if (hit) {
-      const groundY = rayOrigin.y - hit.timeOfImpact;
-      targetY = groundY + CAPSULE_BOTTOM_OFFSET;
-      grounded =
-        translation.y - targetY <= GROUND_SNAP_DISTANCE && velocity.y <= 1;
-
-      if (grounded) {
-        body.setTranslation(
-          { x: translation.x, y: targetY, z: translation.z },
-          true,
-        );
-      }
-    } else if (floorSurfaceY > 0 && translation.y < floorSurfaceY - 2) {
-      targetY = floorSurfaceY + CAPSULE_BOTTOM_OFFSET;
-      grounded = true;
-      body.setTranslation(
-        { x: translation.x, y: targetY, z: translation.z },
-        true,
-      );
-    }
-
-    const nextY = grounded ? targetY : translation.y;
-    const nextVy = grounded ? 0 : velocity.y;
-    const feetY = nextY - CAPSULE_BOTTOM_OFFSET;
+    const feetY = translation.y - CAPSULE_BOTTOM_OFFSET;
 
     camera.rotation.order = "YXZ";
     camera.rotation.y = yaw.current;
@@ -307,8 +309,7 @@ function Player() {
     camera.rotation.z = 0;
     camera.position.set(
       translation.x,
-      (grounded ? feetY : translation.y - CAPSULE_BOTTOM_OFFSET) +
-        STANDING_EYE_HEIGHT,
+      feetY + STANDING_EYE_HEIGHT,
       translation.z,
     );
 
@@ -340,36 +341,19 @@ function Player() {
 
     if (direction.lengthSq() > 0) {
       direction.normalize();
-      body.setLinvel(
-        {
-          x: direction.x * MOVE_SPEED,
-          y: nextVy,
-          z: direction.z * MOVE_SPEED,
-        },
-        true,
-      );
-      body.wakeUp();
+      moveDirection.current.copy(direction);
     } else {
-      body.setLinvel(
-        {
-          x: velocity.x * 0.75,
-          y: nextVy,
-          z: velocity.z * 0.75,
-        },
-        true,
-      );
+      moveDirection.current.set(0, 0, 0);
     }
   });
 
   return (
     <RigidBody
       ref={bodyRef}
+      type="kinematicPosition"
       position={[spawnPoint.x, spawnPoint.y, spawnPoint.z]}
       lockRotations
       colliders={false}
-      canSleep={false}
-      friction={1}
-      linearDamping={0.5}
     >
       <CapsuleCollider args={[CAPSULE_HALF_HEIGHT, CAPSULE_RADIUS]} />
     </RigidBody>
