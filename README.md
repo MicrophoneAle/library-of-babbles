@@ -1,33 +1,108 @@
 # Library of Babbles
 
-Mystical first-floor personal website + library administration project built with Next.js App Router, Tailwind CSS, Framer Motion, and Supabase/PostgreSQL.
+A long-term personal website built as a navigable 3D library. The current milestone is a first-person lobby greybox: walk around a GLB room with Rapier physics, pointer-lock look, and WASD movement.
 
-## Features
+## Current status
 
-- Animated wooden-door intro that transitions into a first-floor lobby
-- Lobby navigation hub with lectern intro, carved gold signs, shelves, vines, and under-construction stairway
-- First-floor sections: `about`, `projects`, `blog`, `books`
-- Books page backed by Supabase with graceful local sample-data fallback
-- API route for reading and creating books
-- SQL schema + seed scripts for immediate preview data
+- **Active app:** Vite + React 19 + React Three Fiber (`src/App.tsx`)
+- **Lobby:** `public/assets/lobby/room_lobby.glb` — floor, elevated mezzanine, and stairs with colliders
+- **Player:** Kinematic character controller with custom gravity, autostep, and a narrow capsule hitbox (0.4 m wide)
+- **Backend scaffold:** Express ABEL proxy in `server/` (not wired to the frontend yet)
+- **Legacy / planned:** Next.js-era components in `src/components/`, Supabase schema in `supabase/` (not connected to the 3D app yet)
 
 ## Stack
 
-- Next.js (App Router, TypeScript)
-- Tailwind CSS
-- Framer Motion
-- Supabase (PostgreSQL)
-- Vercel-ready deployment structure
+| Layer | Tech |
+|-------|------|
+| Frontend | Vite 6, React 19, TypeScript |
+| 3D | Three.js, `@react-three/fiber`, `@react-three/drei`, `@react-three/rapier` |
+| State | Zustand (`src/store/gameStore.ts`) |
+| Data (planned) | Supabase / PostgreSQL |
+| API (planned) | Express proxy in `server/` |
 
 ## Local setup
 
-1. Install dependencies:
-   - `npm install`
-2. Copy `.env.example` to `.env.local` and fill in Supabase values.
-3. In Supabase SQL editor, run:
-   - `supabase/schema.sql`
-   - `supabase/seed.sql`
-4. Run locally:
-   - `npm run dev`
+### Frontend
 
-If Supabase env vars are not configured, the books UI still renders using sample data from `src/lib/sample-books.ts`.
+```bash
+npm install --legacy-peer-deps
+npm run dev
+```
+
+Open [http://localhost:5173](http://localhost:5173). Click the canvas to lock the pointer.
+
+**Controls**
+
+| Input | Action |
+|-------|--------|
+| Click canvas | Pointer lock (mouse look) |
+| W / A / S / D | Move |
+| Mouse | Look around |
+
+### ABEL proxy (optional)
+
+```bash
+cd server
+npm install
+npm start
+```
+
+Runs on port `3001` with `GET /health` and a placeholder `POST /api/abel`.
+
+### Environment variables
+
+Copy `.env.example` to `.env.local` and set Supabase keys when wiring up the books/data layer:
+
+```
+VITE_SUPABASE_URL=
+VITE_SUPABASE_ANON_KEY=
+```
+
+## Project layout
+
+```
+src/
+  App.tsx              # Canvas, lobby room, player physics
+  main.tsx             # Vite entry
+  store/gameStore.ts   # spawn point, room state
+  components/          # Legacy Next.js UI (not used by 3D app yet)
+  lib/                 # Supabase helpers, sample books
+public/
+  assets/lobby/        # Active lobby GLB
+server/                # Express ABEL proxy
+supabase/              # SQL schema + seed
+scripts/
+  inspect-glb.mjs      # Dump GLB node hierarchy and mesh bounds
+```
+
+## Lobby physics notes
+
+The Sketchfab export has inverted shell normals, so the room is rendered with a 180° X flip around its bounding-box center. Spawn height and floor colliders are derived from the **original ceiling** (`bounds.max.y`), which becomes the walkable interior floor after the flip.
+
+Static trimesh colliders (stairs, elevated floor) use invisible mesh clones with `includeInvisible` on the `RigidBody`, because Rapier skips `visible={false}` meshes by default.
+
+To inspect the GLB offline:
+
+```bash
+node scripts/inspect-glb.mjs public/assets/lobby/room_lobby.glb
+```
+
+Enable Rapier debug wireframes by adding the `debug` prop to `<Physics>` in `src/App.tsx`.
+
+## Scripts
+
+| Command | Description |
+|---------|-------------|
+| `npm run dev` | Start Vite dev server |
+| `npm run build` | Production build |
+| `npm run preview` | Preview production build |
+| `npm run typecheck` | TypeScript check |
+| `npm run lint` | ESLint |
+
+## Roadmap (short)
+
+- Clean Blender export pipeline (`SPAWN_*`, `COL_*` markers, corrected normals)
+- Room transitions and additional wings
+- Wire Supabase books/data into the 3D experience
+- Connect ABEL proxy to in-world interactions
+- Post-processing, audio, and richer lobby content
