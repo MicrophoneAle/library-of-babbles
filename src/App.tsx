@@ -21,7 +21,7 @@ const CAPSULE_HALF_HEIGHT = 0.4;
 const CAPSULE_RADIUS = 0.3;
 const CAPSULE_BOTTOM_OFFSET = CAPSULE_HALF_HEIGHT + CAPSULE_RADIUS;
 const LOOK_SENSITIVITY = 0.002;
-const GROUND_SNAP_DISTANCE = 0.35;
+const GROUND_SNAP_DISTANCE = 2;
 
 function useKeyboard() {
   const keys = useRef({
@@ -135,6 +135,7 @@ function prepareRoomContent(source: Object3D) {
 function LobbyRoom() {
   const { scene } = useGLTF("/room_lobby.glb");
   const setSpawnPoint = useGameStore((state) => state.setSpawnPoint);
+  const setFloorSurfaceY = useGameStore((state) => state.setFloorSurfaceY);
 
   const layout = useMemo(() => {
     const prepared = prepareRoomContent(scene);
@@ -143,10 +144,10 @@ function LobbyRoom() {
 
     prepared.room.position.sub(center);
 
-    const walkableY = 2 * center.y - prepared.bounds.min.y;
+    const floorSurfaceY = 2 * center.y - prepared.bounds.min.y;
     const spawnPoint = new Vector3(
       center.x,
-      walkableY - CAPSULE_BOTTOM_OFFSET - 0.1,
+      floorSurfaceY + CAPSULE_BOTTOM_OFFSET + 0.05,
       center.z,
     );
 
@@ -156,13 +157,15 @@ function LobbyRoom() {
       center,
       floorSize,
       localFloorY: prepared.bounds.min.y,
+      floorSurfaceY,
       spawnPoint,
     };
   }, [scene]);
 
   useEffect(() => {
+    setFloorSurfaceY(layout.floorSurfaceY);
     setSpawnPoint(layout.spawnPoint);
-  }, [layout.spawnPoint, setSpawnPoint]);
+  }, [layout.floorSurfaceY, layout.spawnPoint, setFloorSurfaceY, setSpawnPoint]);
 
   return (
     <group position={layout.center} rotation={[Math.PI, 0, 0]}>
@@ -190,6 +193,7 @@ function LobbyRoom() {
 
 function Player() {
   const spawnPoint = useGameStore((state) => state.spawnPoint);
+  const floorSurfaceY = useGameStore((state) => state.floorSurfaceY);
   const bodyRef = useRef<RapierRigidBody>(null);
   const keys = useKeyboard();
   const { camera } = useThree();
@@ -241,7 +245,7 @@ function Player() {
 
   useFrame(() => {
     const body = bodyRef.current;
-    if (!body || !hasSpawned.current) {
+    if (!body || !hasSpawned.current || floorSurfaceY <= 0) {
       return;
     }
 
@@ -279,6 +283,14 @@ function Player() {
           true,
         );
       }
+    } else if (floorSurfaceY > 0 && translation.y < floorSurfaceY) {
+      const targetY = floorSurfaceY + CAPSULE_BOTTOM_OFFSET;
+      nextY = targetY;
+      nextVy = 0;
+      body.setTranslation(
+        { x: translation.x, y: targetY, z: translation.z },
+        true,
+      );
     }
 
     const feetY = nextY - CAPSULE_BOTTOM_OFFSET;
