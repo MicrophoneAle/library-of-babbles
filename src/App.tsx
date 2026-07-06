@@ -6,8 +6,9 @@ import {
   Physics,
   RapierRigidBody,
   RigidBody,
+  useRapier,
 } from "@react-three/rapier";
-import { Suspense, useEffect, useMemo, useRef, useState } from "react";
+import { Suspense, useEffect, useMemo, useRef } from "react";
 import { Box3, Object3D, Quaternion, Vector3 } from "three";
 
 import { useGameStore } from "./store/gameStore";
@@ -18,7 +19,9 @@ const MOVE_SPEED = 5;
 const STANDING_EYE_HEIGHT = 1.6;
 const CAPSULE_HALF_HEIGHT = 0.4;
 const CAPSULE_RADIUS = 0.3;
+const CAPSULE_BOTTOM_OFFSET = CAPSULE_HALF_HEIGHT + CAPSULE_RADIUS;
 const LOOK_SENSITIVITY = 0.002;
+const GROUND_SNAP_DISTANCE = 0.35;
 
 function useKeyboard() {
   const keys = useRef({
@@ -120,7 +123,13 @@ function prepareRoom(source: Object3D) {
     room.add(extractedStairs);
   }
 
-  return room;
+  const bounds = new Box3().setFromObject(room);
+
+  return {
+    room,
+    stairsCollider: extractedStairs ? extractedStairs.clone(true) : null,
+    bounds,
+  };
 }
 
 function resolveSpawnPoint(root: Object3D) {
@@ -147,7 +156,7 @@ function resolveSpawnPoint(root: Object3D) {
 
   const bounds = new Box3().setFromObject(floor);
   const spawn = bounds.getCenter(new Vector3());
-  spawn.y = bounds.min.y + CAPSULE_HALF_HEIGHT + CAPSULE_RADIUS + 0.1;
+  spawn.y = bounds.min.y + CAPSULE_BOTTOM_OFFSET + 0.1;
 
   return spawn;
 }
@@ -156,14 +165,15 @@ function LobbyRoom() {
   const { scene } = useGLTF("/room_lobby.glb");
   const setSpawnPoint = useGameStore((state) => state.setSpawnPoint);
 
-  const { room, floorSize, floorY } = useMemo(() => {
-    const roomScene = prepareRoom(scene);
-    const floor = roomScene.getObjectByName("Lobby_Floor_Walls");
-    const bounds = floor ? new Box3().setFromObject(floor) : new Box3();
+  const { room, stairsCollider, floorSize, floorY } = useMemo(() => {
+    const prepared = prepareRoom(scene);
+    const floor = prepared.room.getObjectByName("Lobby_Floor_Walls");
+    const bounds = floor ? new Box3().setFromObject(floor) : prepared.bounds;
     const size = bounds.getSize(new Vector3());
 
     return {
-      room: roomScene,
+      room: prepared.room,
+      stairsCollider: prepared.stairsCollider,
       floorSize: size,
       floorY: bounds.min.y,
     };
@@ -186,6 +196,11 @@ function LobbyRoom() {
           position={[0, floorY + 0.15, 0]}
         />
       </RigidBody>
+      {stairsCollider ? (
+        <RigidBody type="fixed" colliders="trimesh" friction={1}>
+          <primitive object={stairsCollider} />
+        </RigidBody>
+      ) : null}
     </>
   );
 }
@@ -195,6 +210,7 @@ function Player() {
   const bodyRef = useRef<RapierRigidBody>(null);
   const keys = useKeyboard();
   const { camera } = useThree();
+  const { world, rapier } = useRapier();
   const hasSpawned = useRef(false);
   const pitch = useRef(0);
   const yaw = useRef(0);
@@ -247,7 +263,42 @@ function Player() {
     }
 
     const translation = body.translation();
-    const feetY = translation.y - CAPSULE_HALF_HEIGHT - CAPSULE_RADIUS;
+    const velocity = body.linvel();
+
+    const rayOrigin = {
+      x: translation.x,
+      y: translation.y + CAPSULE_HALF_HEIGHT,
+      z: translation.z,
+    };
+    const ray = new rapier.Ray(rayOrigin, { x: 0, y: -1, z: 0 });
+    const hit = world.castRay(
+      ray,
+      GROUND_SNAP_DISTANCE + CAPSULE_BOTTOM_OFFSET,
+      true,
+      undefined,
+      undefined,
+      undefined,
+      body,
+    );
+
+    let nextY = translation.y;
+    let nextVy = velocity.y;
+
+    if (hit) {
+      const groundY = rayOrigin.y - hit.timeOfImpact;
+      const targetY = groundY + CAPSULE_BOTTOM_OFFSET;
+      nextY = targetY;
+      nextVy = 0;
+
+      if (Math.abs(translation.y - targetY) > 0.001) {
+        body.setTranslation(
+          { x: translation.x, y: targetY, z: translation.z },
+          true,
+        );
+      }
+    }
+
+    const feetY = nextY - CAPSULE_BOTTOM_OFFSET;
 
     camera.rotation.order = "YXZ";
     camera.rotation.y = yaw.current;
@@ -285,14 +336,12 @@ function Player() {
       direction.add(right);
     }
 
-    const velocity = body.linvel();
-
     if (direction.lengthSq() > 0) {
       direction.normalize();
       body.setLinvel(
         {
           x: direction.x * MOVE_SPEED,
-          y: velocity.y,
+          y: nextVy,
           z: direction.z * MOVE_SPEED,
         },
         true,
@@ -302,7 +351,7 @@ function Player() {
       body.setLinvel(
         {
           x: velocity.x * 0.75,
-          y: velocity.y,
+          y: nextVy,
           z: velocity.z * 0.75,
         },
         true,
@@ -317,7 +366,8 @@ function Player() {
       lockRotations
       colliders={false}
       canSleep={false}
-      friction={0.2}
+      friction={1}
+      linearDamping={0.5}
     >
       <CapsuleCollider args={[CAPSULE_HALF_HEIGHT, CAPSULE_RADIUS]} />
     </RigidBody>
@@ -350,59 +400,19 @@ function Crosshair() {
   );
 }
 
-function ClickToPlay({
-  isLocked,
-  onRequestLock,
-}: {
-  isLocked: boolean;
-  onRequestLock: () => void;
-}) {
-  if (isLocked) {
-    return null;
-  }
-
-  return (
-    <button
-      type="button"
-      className="fixed inset-0 z-20 flex cursor-pointer items-center justify-center bg-black/50 text-lg text-white"
-      onPointerDown={(event) => {
-        event.preventDefault();
-        onRequestLock();
-      }}
-    >
-      Click to enter the library
-    </button>
-  );
-}
-
 export default function App() {
-  const [isLocked, setIsLocked] = useState(false);
-
-  useEffect(() => {
-    const onPointerLockChange = () => {
-      const canvas = document.querySelector("canvas");
-      setIsLocked(document.pointerLockElement === canvas);
-    };
-
-    document.addEventListener("pointerlockchange", onPointerLockChange);
-
-    return () => {
-      document.removeEventListener("pointerlockchange", onPointerLockChange);
-    };
-  }, []);
-
-  const requestPointerLock = () => {
-    const canvas = document.querySelector("canvas");
-    canvas?.requestPointerLock();
-  };
-
   return (
     <>
-      <ClickToPlay isLocked={isLocked} onRequestLock={requestPointerLock} />
-      {isLocked ? <Crosshair /> : null}
+      <Crosshair />
       <Canvas
-        style={{ width: "100vw", height: "100vh", display: "block" }}
+        style={{ width: "100vw", height: "100vh", display: "block", cursor: "crosshair" }}
         gl={{ antialias: true }}
+        onPointerDown={(event) => {
+          const canvas = event.target as HTMLElement;
+          if (document.pointerLockElement !== canvas) {
+            canvas.requestPointerLock();
+          }
+        }}
       >
         <Physics gravity={[0, -9.81, 0]}>
           <Scene />
