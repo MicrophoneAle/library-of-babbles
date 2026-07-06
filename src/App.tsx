@@ -20,8 +20,7 @@ useGLTF.preload("/assets/lobby/room_lobby.glb");
 const MOVE_SPEED = 5;
 const GRAVITY = -29.4;
 const TERMINAL_VELOCITY = -55;
-const GROUND_STICK = -0.1;
-const GROUND_TOLERANCE = 0.25;
+const SNAP_TO_GROUND = 0.2;
 const STANDING_EYE_HEIGHT = 1.6;
 const CAPSULE_HALF_HEIGHT = 0.4;
 const CAPSULE_RADIUS = 0.3;
@@ -202,7 +201,6 @@ function LobbyRoom() {
 
 function Player() {
   const spawnPoint = useGameStore((state) => state.spawnPoint);
-  const floorSurfaceY = useGameStore((state) => state.floorSurfaceY);
   const bodyRef = useRef<RapierRigidBody>(null);
   const characterControllerRef = useRef<KinematicCharacterController | null>(null);
   const keys = useKeyboard();
@@ -213,26 +211,18 @@ function Player() {
   const yaw = useRef(0);
   const deltaRef = useRef(1 / 60);
   const moveDirection = useRef(new Vector3());
+  /** Vertical velocity in m/s (not displacement). */
   const vy = useRef(0);
-  const isGrounded = useRef(true);
+  const isGrounded = useRef(false);
 
   const forward = useMemo(() => new Vector3(), []);
   const right = useMemo(() => new Vector3(), []);
   const direction = useMemo(() => new Vector3(), []);
   const up = useMemo(() => new Vector3(0, 1, 0), []);
 
-  const isNearFloorSurface = (bodyY: number) => {
-    if (floorSurfaceY <= 0) {
-      return false;
-    }
-
-    const feetY = bodyY - CAPSULE_BOTTOM_OFFSET;
-    return Math.abs(feetY - floorSurfaceY) <= GROUND_TOLERANCE;
-  };
-
   useEffect(() => {
     const controller = world.createCharacterController(0.08);
-    controller.enableSnapToGround(0.45);
+    controller.enableSnapToGround(SNAP_TO_GROUND);
     controller.enableAutostep(0.55, 0.25, true);
     controller.setMaxSlopeClimbAngle((50 * Math.PI) / 180);
     characterControllerRef.current = controller;
@@ -275,7 +265,7 @@ function Player() {
       true,
     );
     vy.current = 0;
-    isGrounded.current = true;
+    isGrounded.current = false;
     hasSpawned.current = true;
   }, [spawnPoint]);
 
@@ -292,42 +282,36 @@ function Player() {
     }
 
     const delta = deltaRef.current;
-    const position = body.translation();
-    const groundedBeforeStep =
-      isGrounded.current || isNearFloorSurface(position.y);
 
-    if (groundedBeforeStep) {
-      vy.current = GROUND_STICK;
+    if (isGrounded.current) {
+      vy.current = 0;
     } else {
       vy.current += GRAVITY * delta;
       vy.current = Math.max(vy.current, TERMINAL_VELOCITY);
     }
 
     const move = moveDirection.current;
-    const horizontalSpeed = MOVE_SPEED * delta;
-
-    controller.computeColliderMovement(collider, {
-      x: move.x * horizontalSpeed,
+    const desiredTranslation = {
+      x: move.x * MOVE_SPEED * delta,
       y: vy.current * delta,
-      z: move.z * horizontalSpeed,
-    });
+      z: move.z * MOVE_SPEED * delta,
+    };
 
-    const step = controller.computedMovement();
-    const groundedAfterStep =
-      controller.computedGrounded() ||
-      isNearFloorSurface(position.y + step.y);
+    controller.computeColliderMovement(collider, desiredTranslation);
 
-    isGrounded.current = groundedAfterStep;
-
-    if (groundedAfterStep) {
-      vy.current = GROUND_STICK;
-    }
+    const computedStep = controller.computedMovement();
+    const position = body.translation();
 
     body.setNextKinematicTranslation({
-      x: position.x + step.x,
-      y: position.y + step.y,
-      z: position.z + step.z,
+      x: position.x + computedStep.x,
+      y: position.y + computedStep.y,
+      z: position.z + computedStep.z,
     });
+
+    isGrounded.current = controller.computedGrounded();
+    if (isGrounded.current) {
+      vy.current = 0;
+    }
   });
 
   useFrame((_, delta) => {
