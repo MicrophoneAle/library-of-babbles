@@ -11,7 +11,7 @@ import {
 } from "@react-three/rapier";
 import { Suspense, useEffect, useMemo, useRef } from "react";
 import type { KinematicCharacterController } from "@dimforge/rapier3d-compat";
-import { Box3, Object3D, Quaternion, Vector3 } from "three";
+import { Box3, Group, Object3D, Quaternion, Vector3 } from "three";
 
 import { useGameStore } from "./store/gameStore";
 
@@ -22,8 +22,9 @@ const GRAVITY = -29.4;
 const TERMINAL_VELOCITY = -55;
 const SNAP_TO_GROUND = 0.2;
 const STANDING_EYE_HEIGHT = 1.6;
-const CAPSULE_HALF_HEIGHT = 0.4;
-const CAPSULE_RADIUS = 0.3;
+// Total capsule height = 2 * (half height + radius) = 1.4 m, 0.4 m wide.
+const CAPSULE_HALF_HEIGHT = 0.5;
+const CAPSULE_RADIUS = 0.2;
 const CAPSULE_BOTTOM_OFFSET = CAPSULE_HALF_HEIGHT + CAPSULE_RADIUS;
 const LOOK_SENSITIVITY = 0.002;
 
@@ -100,13 +101,25 @@ function findStairsNode(root: Object3D) {
   return stairs;
 }
 
+function makeInvisibleColliderClone(source: Object3D) {
+  const clone = source.clone(true);
+  clone.traverse((child) => {
+    if ((child as Object3D & { isMesh?: boolean }).isMesh) {
+      child.visible = false;
+    }
+  });
+  return clone;
+}
+
 function prepareRoomContent(source: Object3D) {
   const room = source.clone(true);
   room.updateMatrixWorld(true);
 
+  // Group of invisible mesh clones that receive trimesh colliders.
+  const staticColliders = new Group();
+
   const sketchfab = room.getObjectByName("Sketchfab_model");
   const stairsSource = sketchfab ? findStairsNode(sketchfab) : findStairsNode(room);
-  let stairsCollider: Object3D | null = null;
 
   if (stairsSource) {
     const position = new Vector3();
@@ -121,12 +134,12 @@ function prepareRoomContent(source: Object3D) {
     stairs.updateMatrixWorld(true);
     room.add(stairs);
 
-    stairsCollider = stairs.clone(true);
-    stairsCollider.traverse((child) => {
-      if ((child as Object3D & { isMesh?: boolean }).isMesh) {
-        child.visible = false;
-      }
-    });
+    staticColliders.add(makeInvisibleColliderClone(stairs));
+  }
+
+  const elevatedFloor = room.getObjectByName("Lobby_Elevated_Floor");
+  if (elevatedFloor) {
+    staticColliders.add(makeInvisibleColliderClone(elevatedFloor));
   }
 
   sketchfab?.parent?.remove(sketchfab);
@@ -135,7 +148,7 @@ function prepareRoomContent(source: Object3D) {
 
   return {
     room,
-    stairsCollider,
+    staticColliders,
     bounds,
   };
 }
@@ -169,7 +182,7 @@ function LobbyRoom() {
 
     return {
       room: prepared.room,
-      stairsCollider: prepared.stairsCollider,
+      staticColliders: prepared.staticColliders,
       center,
       floorSize,
       // Local (pre-flip) Y of the surface that becomes the interior floor.
@@ -202,18 +215,16 @@ function LobbyRoom() {
             ]}
           />
         </RigidBody>
-        {layout.stairsCollider ? (
-          // includeInvisible is required: the collider clone's meshes are
-          // visible=false, and rapier skips invisible meshes by default.
-          <RigidBody
-            type="fixed"
-            colliders="trimesh"
-            friction={1}
-            includeInvisible
-          >
-            <primitive object={layout.stairsCollider} />
-          </RigidBody>
-        ) : null}
+        {/* includeInvisible is required: the collider clones' meshes are
+            visible=false, and rapier skips invisible meshes by default. */}
+        <RigidBody
+          type="fixed"
+          colliders="trimesh"
+          friction={1}
+          includeInvisible
+        >
+          <primitive object={layout.staticColliders} />
+        </RigidBody>
       </group>
     </group>
   );
