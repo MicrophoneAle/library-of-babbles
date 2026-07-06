@@ -2,19 +2,22 @@ import { Environment, PointerLockControls, useGLTF } from "@react-three/drei";
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import {
   CapsuleCollider,
+  CuboidCollider,
   Physics,
   RapierRigidBody,
   RigidBody,
 } from "@react-three/rapier";
 import { Suspense, useEffect, useMemo, useRef } from "react";
-import { Vector3 } from "three";
+import { Box3, Object3D, Vector3 } from "three";
 
 import { useGameStore } from "./store/gameStore";
 
 useGLTF.preload("/room_lobby.glb");
 
-const MOVE_IMPULSE = 0.35;
+const MOVE_SPEED = 5;
 const EYE_HEIGHT = 1.7;
+const CAPSULE_HALF_HEIGHT = 0.4;
+const CAPSULE_RADIUS = 0.3;
 
 function useKeyboard() {
   const keys = useRef({
@@ -71,27 +74,78 @@ function useKeyboard() {
   return keys;
 }
 
+function stripImportedArtifacts(root: Object3D) {
+  const sketchfab = root.getObjectByName("Sketchfab_model");
+  sketchfab?.parent?.remove(sketchfab);
+}
+
+function resolveSpawnPoint(root: Object3D) {
+  root.updateMatrixWorld(true);
+
+  let spawnMarker: Object3D | null = null;
+
+  root.traverse((object) => {
+    if (object.name.startsWith("SPAWN_")) {
+      spawnMarker = object;
+    }
+  });
+
+  if (spawnMarker) {
+    const position = new Vector3();
+    spawnMarker.getWorldPosition(position);
+    return position;
+  }
+
+  const floor = root.getObjectByName("Lobby_Floor_Walls");
+  if (!floor) {
+    return new Vector3(0, 1, 5);
+  }
+
+  const bounds = new Box3().setFromObject(floor);
+  const spawn = bounds.getCenter(new Vector3());
+  spawn.y = bounds.min.y + CAPSULE_HALF_HEIGHT + CAPSULE_RADIUS + 0.05;
+
+  return spawn;
+}
+
 function LobbyRoom() {
   const { scene } = useGLTF("/room_lobby.glb");
   const setSpawnPoint = useGameStore((state) => state.setSpawnPoint);
-  const room = useMemo(() => scene.clone(true), [scene]);
+
+  const { room, floorSize } = useMemo(() => {
+    const roomScene = scene.clone(true);
+    stripImportedArtifacts(roomScene);
+
+    const floor = roomScene.getObjectByName("Lobby_Floor_Walls");
+    const bounds = floor ? new Box3().setFromObject(floor) : new Box3();
+    const size = bounds.getSize(new Vector3());
+
+    return {
+      room: roomScene,
+      floorSize: size,
+    };
+  }, [scene]);
 
   useEffect(() => {
-    room.updateMatrixWorld(true);
-
-    room.traverse((object) => {
-      if (object.name.startsWith("SPAWN_")) {
-        const position = new Vector3();
-        object.getWorldPosition(position);
-        setSpawnPoint(position);
-      }
-    });
+    setSpawnPoint(resolveSpawnPoint(room));
   }, [room, setSpawnPoint]);
 
   return (
-    <RigidBody type="fixed" colliders="trimesh">
-      <primitive object={room} />
-    </RigidBody>
+    <>
+      <RigidBody type="fixed" colliders="trimesh" friction={1}>
+        <primitive object={room} />
+      </RigidBody>
+      <RigidBody type="fixed" colliders={false} friction={1}>
+        <CuboidCollider
+          args={[
+            Math.max(floorSize.x * 0.5, 5),
+            0.1,
+            Math.max(floorSize.z * 0.5, 5),
+          ]}
+          position={[0, -0.2, 0]}
+        />
+      </RigidBody>
+    </>
   );
 }
 
@@ -100,10 +154,12 @@ function Player() {
   const bodyRef = useRef<RapierRigidBody>(null);
   const keys = useKeyboard();
   const { camera } = useThree();
+  const hasSpawned = useRef(false);
 
   const forward = useMemo(() => new Vector3(), []);
   const right = useMemo(() => new Vector3(), []);
   const direction = useMemo(() => new Vector3(), []);
+  const up = useMemo(() => new Vector3(0, 1, 0), []);
 
   useEffect(() => {
     const body = bodyRef.current;
@@ -115,11 +171,14 @@ function Player() {
       { x: spawnPoint.x, y: spawnPoint.y, z: spawnPoint.z },
       true,
     );
+    body.setLinvel({ x: 0, y: 0, z: 0 }, true);
+    body.wakeUp();
+    hasSpawned.current = true;
   }, [spawnPoint]);
 
   useFrame(() => {
     const body = bodyRef.current;
-    if (!body) {
+    if (!body || !hasSpawned.current) {
       return;
     }
 
@@ -135,11 +194,13 @@ function Player() {
     camera.getWorldDirection(forward);
     forward.y = 0;
 
-    if (forward.lengthSq() > 0) {
+    if (forward.lengthSq() > 0.001) {
       forward.normalize();
+      right.crossVectors(forward, up).normalize();
+    } else {
+      forward.set(0, 0, -1);
+      right.set(1, 0, 0);
     }
-
-    right.crossVectors(forward, new Vector3(0, 1, 0)).normalize();
 
     if (keys.current.forward) {
       direction.add(forward);
@@ -154,9 +215,28 @@ function Player() {
       direction.add(right);
     }
 
+    const velocity = body.linvel();
+
     if (direction.lengthSq() > 0) {
-      direction.normalize().multiplyScalar(MOVE_IMPULSE);
-      body.applyImpulse({ x: direction.x, y: 0, z: direction.z }, true);
+      direction.normalize();
+      body.setLinvel(
+        {
+          x: direction.x * MOVE_SPEED,
+          y: velocity.y,
+          z: direction.z * MOVE_SPEED,
+        },
+        true,
+      );
+      body.wakeUp();
+    } else {
+      body.setLinvel(
+        {
+          x: velocity.x * 0.75,
+          y: velocity.y,
+          z: velocity.z * 0.75,
+        },
+        true,
+      );
     }
   });
 
@@ -166,9 +246,10 @@ function Player() {
       position={[spawnPoint.x, spawnPoint.y, spawnPoint.z]}
       lockRotations
       colliders={false}
-      linearDamping={2}
+      canSleep={false}
+      friction={0.2}
     >
-      <CapsuleCollider args={[0.7, 0.3]} />
+      <CapsuleCollider args={[CAPSULE_HALF_HEIGHT, CAPSULE_RADIUS]} />
     </RigidBody>
   );
 }
