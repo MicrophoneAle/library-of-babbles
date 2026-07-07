@@ -172,13 +172,20 @@ function LobbyRoom() {
     // world-space bounds: 2 * center.y - max.y (numerically equal to min.y).
     // Using min.y here would put the floor/spawn on top of the roof.
     const floorSurfaceY = 2 * center.y - prepared.bounds.max.y;
+
+    // After the 180° flip, original -Z (stairs/back) becomes world +Z.
+    const worldMinZ = -prepared.bounds.max.z;
+    const worldMaxZ = -prepared.bounds.min.z;
+    const spawnZ = worldMaxZ - 2.5;
     const spawnPoint = new Vector3(
       center.x,
       // Clearance must exceed the character controller contact offset (0.08)
       // so the capsule doesn't start the first step in penetration.
       floorSurfaceY + CAPSULE_BOTTOM_OFFSET + 0.1,
-      center.z,
+      spawnZ,
     );
+    // Default camera forward is -Z; yaw = π faces +Z toward the stairs.
+    const spawnYaw = Math.PI;
 
     return {
       room: prepared.room,
@@ -189,13 +196,14 @@ function LobbyRoom() {
       localFloorY: prepared.bounds.max.y,
       floorSurfaceY,
       spawnPoint,
+      spawnYaw,
     };
   }, [scene]);
 
   useEffect(() => {
     setFloorSurfaceY(layout.floorSurfaceY);
-    setSpawnPoint(layout.spawnPoint);
-  }, [layout.floorSurfaceY, layout.spawnPoint, setFloorSurfaceY, setSpawnPoint]);
+    setSpawnPoint(layout.spawnPoint, layout.spawnYaw);
+  }, [layout.floorSurfaceY, layout.spawnPoint, layout.spawnYaw, setFloorSurfaceY, setSpawnPoint]);
 
   return (
     <group position={layout.center} rotation={[Math.PI, 0, 0]}>
@@ -232,6 +240,7 @@ function LobbyRoom() {
 
 function Player() {
   const spawnPoint = useGameStore((state) => state.spawnPoint);
+  const spawnYaw = useGameStore((state) => state.spawnYaw);
   const bodyRef = useRef<RapierRigidBody>(null);
   const characterControllerRef = useRef<KinematicCharacterController | null>(null);
   const keys = useKeyboard();
@@ -294,10 +303,12 @@ function Player() {
       { x: spawnPoint.x, y: spawnPoint.y, z: spawnPoint.z },
       true,
     );
+    yaw.current = spawnYaw;
+    pitch.current = 0;
     vy.current = 0;
     isGrounded.current = false;
     hasSpawned.current = true;
-  }, [spawnPoint]);
+  }, [spawnPoint, spawnYaw]);
 
   useBeforePhysicsStep(() => {
     const body = bodyRef.current;
