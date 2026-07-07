@@ -176,7 +176,7 @@ function LobbyRoom() {
     // After the 180° flip, original -Z (stairs/back) becomes world +Z.
     const worldMinZ = -prepared.bounds.max.z;
     const worldMaxZ = -prepared.bounds.min.z;
-    const spawnZ = worldMaxZ - 2.5;
+    const spawnZ = worldMinZ + 2.5;
     const spawnPoint = new Vector3(
       center.x,
       // Clearance must exceed the character controller contact offset (0.08)
