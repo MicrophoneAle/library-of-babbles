@@ -20,7 +20,10 @@ useGLTF.preload("/assets/lobby/room_lobby.glb");
 const MOVE_SPEED = 5;
 const GRAVITY = -29.4;
 const TERMINAL_VELOCITY = -55;
-const SNAP_TO_GROUND = 0.2;
+const SNAP_TO_GROUND = 0.35;
+// How high / how little forward space a ledge needs for the controller to step onto it.
+const AUTO_STEP_MAX_HEIGHT = 1.25;
+const AUTO_STEP_MIN_WIDTH = 0.2;
 const STANDING_EYE_HEIGHT = 1.6;
 // Total capsule height = 2 * (half height + radius) = 1.4 m, 0.4 m wide.
 const CAPSULE_HALF_HEIGHT = 0.5;
@@ -255,8 +258,8 @@ function Player() {
   useEffect(() => {
     const controller = world.createCharacterController(0.08);
     controller.enableSnapToGround(SNAP_TO_GROUND);
-    controller.enableAutostep(0.55, 0.25, true);
-    controller.setMaxSlopeClimbAngle((50 * Math.PI) / 180);
+    controller.enableAutostep(AUTO_STEP_MAX_HEIGHT, AUTO_STEP_MIN_WIDTH, true);
+    controller.setMaxSlopeClimbAngle((60 * Math.PI) / 180);
     characterControllerRef.current = controller;
 
     return () => {
