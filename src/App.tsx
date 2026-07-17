@@ -9,7 +9,7 @@ import {
   useBeforePhysicsStep,
   useRapier,
 } from "@react-three/rapier";
-import { Suspense, useEffect, useMemo, useRef } from "react";
+import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import type { KinematicCharacterController } from "@dimforge/rapier3d-compat";
 import { Box3, Group, Object3D, Quaternion, Vector3 } from "three";
 
@@ -43,37 +43,38 @@ function useKeyboard() {
   });
 
   useEffect(() => {
-    const onKeyDown = (event: KeyboardEvent) => {
-      switch (event.code) {
+    const setDirection = (code: string, value: boolean) => {
+      switch (code) {
         case "KeyW":
-          keys.current.forward = true;
-          break;
+        case "ArrowUp":
+          keys.current.forward = value;
+          return true;
         case "KeyS":
-          keys.current.back = true;
-          break;
+        case "ArrowDown":
+          keys.current.back = value;
+          return true;
         case "KeyA":
-          keys.current.left = true;
-          break;
+        case "ArrowLeft":
+          keys.current.left = value;
+          return true;
         case "KeyD":
-          keys.current.right = true;
-          break;
+        case "ArrowRight":
+          keys.current.right = value;
+          return true;
+        default:
+          return false;
+      }
+    };
+
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (setDirection(event.code, true) && event.code.startsWith("Arrow")) {
+        event.preventDefault();
       }
     };
 
     const onKeyUp = (event: KeyboardEvent) => {
-      switch (event.code) {
-        case "KeyW":
-          keys.current.forward = false;
-          break;
-        case "KeyS":
-          keys.current.back = false;
-          break;
-        case "KeyA":
-          keys.current.left = false;
-          break;
-        case "KeyD":
-          keys.current.right = false;
-          break;
+      if (setDirection(event.code, false) && event.code.startsWith("Arrow")) {
+        event.preventDefault();
       }
     };
 
@@ -450,10 +451,116 @@ function Crosshair() {
   );
 }
 
+type MovementPressed = {
+  forward: boolean;
+  back: boolean;
+  left: boolean;
+  right: boolean;
+};
+
+function useMovementPressed() {
+  const [pressed, setPressed] = useState<MovementPressed>({
+    forward: false,
+    back: false,
+    left: false,
+    right: false,
+  });
+
+  useEffect(() => {
+    const apply = (code: string, value: boolean) => {
+      setPressed((prev) => {
+        switch (code) {
+          case "KeyW":
+          case "ArrowUp":
+            return prev.forward === value ? prev : { ...prev, forward: value };
+          case "KeyS":
+          case "ArrowDown":
+            return prev.back === value ? prev : { ...prev, back: value };
+          case "KeyA":
+          case "ArrowLeft":
+            return prev.left === value ? prev : { ...prev, left: value };
+          case "KeyD":
+          case "ArrowRight":
+            return prev.right === value ? prev : { ...prev, right: value };
+          default:
+            return prev;
+        }
+      });
+    };
+
+    const onKeyDown = (event: KeyboardEvent) => {
+      apply(event.code, true);
+    };
+
+    const onKeyUp = (event: KeyboardEvent) => {
+      apply(event.code, false);
+    };
+
+    const clearAll = () => {
+      setPressed({
+        forward: false,
+        back: false,
+        left: false,
+        right: false,
+      });
+    };
+
+    window.addEventListener("keydown", onKeyDown);
+    window.addEventListener("keyup", onKeyUp);
+    window.addEventListener("blur", clearAll);
+
+    return () => {
+      window.removeEventListener("keydown", onKeyDown);
+      window.removeEventListener("keyup", onKeyUp);
+      window.removeEventListener("blur", clearAll);
+    };
+  }, []);
+
+  return pressed;
+}
+
+function KeyCap({
+  label,
+  active,
+}: {
+  label: string;
+  active: boolean;
+}) {
+  return (
+    <div
+      className={`flex h-10 w-10 items-center justify-center rounded-md border text-lg font-semibold transition-colors duration-75 ${
+        active
+          ? "border-white/80 bg-white/85 text-stone-900 shadow-[0_0_12px_rgba(255,255,255,0.35)]"
+          : "border-white/25 bg-black/45 text-white/70"
+      }`}
+    >
+      {label}
+    </div>
+  );
+}
+
+function MovementKeys() {
+  const pressed = useMovementPressed();
+
+  return (
+    <div className="pointer-events-none fixed bottom-5 right-5 z-10 select-none">
+      <div className="grid grid-cols-3 gap-1.5">
+        <div />
+        <KeyCap label="↑" active={pressed.forward} />
+        <div />
+        <KeyCap label="←" active={pressed.left} />
+        <KeyCap label="↓" active={pressed.back} />
+        <KeyCap label="→" active={pressed.right} />
+      </div>
+    </div>
+  );
+}
+
 export default function App() {
   return (
     <>
       <Crosshair />
+      <MovementKeys />
       <Canvas
         style={{ width: "100vw", height: "100vh", display: "block", cursor: "crosshair" }}
         gl={{ antialias: true }}
