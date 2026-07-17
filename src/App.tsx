@@ -442,7 +442,7 @@ function Scene() {
 
 function Crosshair() {
   return (
-    <div className="pointer-events-none fixed inset-0 z-10 flex items-center justify-center [&_*]:pointer-events-none">
+    <div className="absolute inset-0 flex items-center justify-center">
       <div className="relative h-3 w-3">
         <div className="absolute left-1/2 top-0 h-full w-px -translate-x-1/2 bg-white/90" />
         <div className="absolute left-0 top-1/2 h-px w-full -translate-y-1/2 bg-white/90" />
@@ -528,10 +528,10 @@ function KeyCap({
 }) {
   return (
     <div
-      className={`flex h-10 w-10 items-center justify-center rounded-md border text-lg font-semibold transition-colors duration-75 ${
+      className={`flex h-9 w-9 items-center justify-center rounded border text-base font-medium transition-colors duration-75 ${
         active
-          ? "border-white/80 bg-white/85 text-stone-900 shadow-[0_0_12px_rgba(255,255,255,0.35)]"
-          : "border-white/25 bg-black/45 text-white/70"
+          ? "border-white/20 bg-black/70 text-white/50"
+          : "border-white/35 bg-black/30 text-white/80"
       }`}
     >
       {label}
@@ -543,14 +543,30 @@ function MovementKeys() {
   const pressed = useMovementPressed();
 
   return (
-    <div className="pointer-events-none fixed bottom-5 right-5 z-10 select-none">
-      <div className="grid grid-cols-3 gap-1.5">
-        <div />
-        <KeyCap label="↑" active={pressed.forward} />
-        <div />
-        <KeyCap label="←" active={pressed.left} />
-        <KeyCap label="↓" active={pressed.back} />
-        <KeyCap label="→" active={pressed.right} />
+    <div className="absolute bottom-6 right-6 select-none">
+      <div
+        className="grid gap-1"
+        style={{
+          gridTemplateColumns: "repeat(3, 2.25rem)",
+          gridTemplateRows: "repeat(2, 2.25rem)",
+          gridTemplateAreas: `
+            ".    up   ."
+            "left down right"
+          `,
+        }}
+      >
+        <div style={{ gridArea: "up" }}>
+          <KeyCap label="↑" active={pressed.forward} />
+        </div>
+        <div style={{ gridArea: "left" }}>
+          <KeyCap label="←" active={pressed.left} />
+        </div>
+        <div style={{ gridArea: "down" }}>
+          <KeyCap label="↓" active={pressed.back} />
+        </div>
+        <div style={{ gridArea: "right" }}>
+          <KeyCap label="→" active={pressed.right} />
+        </div>
       </div>
     </div>
   );
@@ -558,11 +574,9 @@ function MovementKeys() {
 
 export default function App() {
   return (
-    <>
-      <Crosshair />
-      <MovementKeys />
+    <div className="relative h-screen w-screen overflow-hidden">
       <Canvas
-        style={{ width: "100vw", height: "100vh", display: "block", cursor: "crosshair" }}
+        style={{ width: "100%", height: "100%", display: "block", cursor: "crosshair" }}
         gl={{ antialias: true }}
         onPointerDown={(event) => {
           const canvas = event.target as HTMLElement;
@@ -575,6 +589,10 @@ export default function App() {
           <Scene />
         </Physics>
       </Canvas>
-    </>
+      <div className="pointer-events-none absolute inset-0 z-10 [&_*]:pointer-events-none">
+        <Crosshair />
+        <MovementKeys />
+      </div>
+    </div>
   );
 }
