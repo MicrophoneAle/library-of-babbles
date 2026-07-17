@@ -543,7 +543,7 @@ function MovementKeys() {
   const pressed = useMovementPressed();
 
   return (
-    <div className="absolute bottom-6 right-6 select-none">
+    <div className="absolute bottom-6 left-6 select-none">
       <div
         className="grid gap-1"
         style={{
