@@ -77,7 +77,7 @@ scripts/
 
 ## Lobby physics notes
 
-The Sketchfab export has inverted shell normals, so the room is rendered with a 180° X flip around its bounding-box center. Spawn height and floor colliders are derived from the **original ceiling** (`bounds.max.y`), which becomes the walkable interior floor after the flip.
+The lobby GLB is loaded in its authored orientation (no corrective flip). Floor height and spawn placement are derived from `Lobby_Floor_Walls` bounds. The player spawns on the ground floor near the −Z wall, facing +Z toward the stairs / elevated floor.
 
 Static trimesh colliders (stairs, elevated floor) use invisible mesh clones with `includeInvisible` on the `RigidBody`, because Rapier skips `visible={false}` meshes by default.
 

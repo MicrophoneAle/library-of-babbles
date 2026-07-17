@@ -144,12 +144,17 @@ function prepareRoomContent(source: Object3D) {
 
   sketchfab?.parent?.remove(sketchfab);
 
-  const bounds = new Box3().setFromObject(room);
+  room.updateMatrixWorld(true);
+
+  const floorMesh = room.getObjectByName("Lobby_Floor_Walls");
+  const floorBounds = floorMesh
+    ? new Box3().setFromObject(floorMesh)
+    : new Box3().setFromObject(room);
 
   return {
     room,
     staticColliders,
-    bounds,
+    floorBounds,
   };
 }
 
@@ -160,31 +165,23 @@ function LobbyRoom() {
 
   const layout = useMemo(() => {
     const prepared = prepareRoomContent(scene);
-    const center = prepared.bounds.getCenter(new Vector3());
-    const floorSize = prepared.bounds.getSize(new Vector3());
+    const { floorBounds } = prepared;
+    const center = floorBounds.getCenter(new Vector3());
+    const floorSize = floorBounds.getSize(new Vector3());
 
-    // NOTE: do NOT offset prepared.room.position here. The nested groups below
-    // already apply T(center) * R(pi) * T(-center); subtracting center from the
-    // mesh as well shifts the visuals away from the physics colliders.
+    // Room is correctly oriented — floor is the bottom of the floor/walls mesh.
+    const floorSurfaceY = floorBounds.min.y;
 
-    // The 180° flip is around the bounds center, so the original ceiling
-    // (bounds.max.y) becomes the interior floor and lands at the BOTTOM of the
-    // world-space bounds: 2 * center.y - max.y (numerically equal to min.y).
-    // Using min.y here would put the floor/spawn on top of the roof.
-    const floorSurfaceY = 2 * center.y - prepared.bounds.max.y;
-
-    // After the 180° flip, original -Z (stairs/back) becomes world +Z.
-    const worldMinZ = -prepared.bounds.max.z;
-    const worldMaxZ = -prepared.bounds.min.z;
-    const spawnZ = worldMinZ + 2.5;
+    // Elevated floor / stairs sit toward +Z; spawn near the opposite (-Z) wall
+    // facing them. Default camera looks down -Z, so yaw = π faces +Z.
+    const spawnInset = 2.5;
     const spawnPoint = new Vector3(
       center.x,
       // Clearance must exceed the character controller contact offset (0.08)
       // so the capsule doesn't start the first step in penetration.
       floorSurfaceY + CAPSULE_BOTTOM_OFFSET + 0.1,
-      spawnZ,
+      floorBounds.min.z + spawnInset,
     );
-    // Default camera forward is -Z; yaw = π faces +Z toward the stairs.
     const spawnYaw = Math.PI;
 
     return {
@@ -192,8 +189,6 @@ function LobbyRoom() {
       staticColliders: prepared.staticColliders,
       center,
       floorSize,
-      // Local (pre-flip) Y of the surface that becomes the interior floor.
-      localFloorY: prepared.bounds.max.y,
       floorSurfaceY,
       spawnPoint,
       spawnYaw,
@@ -206,35 +201,33 @@ function LobbyRoom() {
   }, [layout.floorSurfaceY, layout.spawnPoint, layout.spawnYaw, setFloorSurfaceY, setSpawnPoint]);
 
   return (
-    <group position={layout.center} rotation={[Math.PI, 0, 0]}>
-      <group position={[-layout.center.x, -layout.center.y, -layout.center.z]}>
-        <primitive object={layout.room} />
-        <RigidBody type="fixed" colliders={false} friction={1}>
-          <CuboidCollider
-            args={[
-              Math.max(layout.floorSize.x * 0.5, 5),
-              0.15,
-              Math.max(layout.floorSize.z * 0.5, 5),
-            ]}
-            position={[
-              layout.center.x,
-              layout.localFloorY + 0.15,
-              layout.center.z,
-            ]}
-          />
-        </RigidBody>
-        {/* includeInvisible is required: the collider clones' meshes are
-            visible=false, and rapier skips invisible meshes by default. */}
-        <RigidBody
-          type="fixed"
-          colliders="trimesh"
-          friction={1}
-          includeInvisible
-        >
-          <primitive object={layout.staticColliders} />
-        </RigidBody>
-      </group>
-    </group>
+    <>
+      <primitive object={layout.room} />
+      <RigidBody type="fixed" colliders={false} friction={1}>
+        <CuboidCollider
+          args={[
+            Math.max(layout.floorSize.x * 0.5, 5),
+            0.15,
+            Math.max(layout.floorSize.z * 0.5, 5),
+          ]}
+          position={[
+            layout.center.x,
+            layout.floorSurfaceY - 0.15,
+            layout.center.z,
+          ]}
+        />
+      </RigidBody>
+      {/* includeInvisible is required: the collider clones' meshes are
+          visible=false, and rapier skips invisible meshes by default. */}
+      <RigidBody
+        type="fixed"
+        colliders="trimesh"
+        friction={1}
+        includeInvisible
+      >
+        <primitive object={layout.staticColliders} />
+      </RigidBody>
+    </>
   );
 }
 
