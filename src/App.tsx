@@ -17,14 +17,16 @@ import { useGameStore } from "./store/gameStore";
 
 useGLTF.preload("/assets/lobby/room_lobby.glb");
 
-const MOVE_SPEED = 5;
+const MOVE_SPEED = 6;
 const GRAVITY = -29.4;
 const TERMINAL_VELOCITY = -55;
-const SNAP_TO_GROUND = 0.2;
-// Small ledges only — the stair flight uses a smooth ramp collider instead.
-const AUTO_STEP_MAX_HEIGHT = 0.4;
-const AUTO_STEP_MIN_WIDTH = 0.15;
-const CHARACTER_OFFSET = 0.05;
+const SNAP_TO_GROUND = 0.18;
+// Tuned for one tall stair riser — high enough to clear steps, low enough to
+// avoid leaping several at once and jamming.
+const AUTO_STEP_MAX_HEIGHT = 1.0;
+const AUTO_STEP_MIN_WIDTH = 0.08;
+const CHARACTER_OFFSET = 0.04;
+const MAX_SLOPE_CLIMB_DEG = 60;
 const STANDING_EYE_HEIGHT = 1.6;
 // Total capsule height = 2 * (half height + radius) = 1.4 m, 0.4 m wide.
 const CAPSULE_HALF_HEIGHT = 0.5;
@@ -119,10 +121,8 @@ function prepareRoomContent(source: Object3D) {
   const room = source.clone(true);
   room.updateMatrixWorld(true);
 
-  // Invisible mesh clones for trimesh colliders (elevated floor only — stairs
-  // use a smooth ramp so the character controller can walk them continuously).
+  // Invisible mesh clones for trimesh colliders (stairs + elevated floor).
   const staticColliders = new Group();
-  let stairsBounds: Box3 | null = null;
 
   const sketchfab = room.getObjectByName("Sketchfab_model");
   const stairsSource = sketchfab ? findStairsNode(sketchfab) : findStairsNode(room);
@@ -139,14 +139,12 @@ function prepareRoomContent(source: Object3D) {
     stairs.scale.copy(scale);
     stairs.updateMatrixWorld(true);
     room.add(stairs);
-    stairsBounds = new Box3().setFromObject(stairs);
+    staticColliders.add(makeInvisibleColliderClone(stairs));
   }
 
   const elevatedFloor = room.getObjectByName("Lobby_Elevated_Floor");
-  let elevatedFloorY: number | null = null;
   if (elevatedFloor) {
     staticColliders.add(makeInvisibleColliderClone(elevatedFloor));
-    elevatedFloorY = new Box3().setFromObject(elevatedFloor).min.y;
   }
 
   sketchfab?.parent?.remove(sketchfab);
@@ -162,44 +160,6 @@ function prepareRoomContent(source: Object3D) {
     room,
     staticColliders,
     floorBounds,
-    stairsBounds,
-    elevatedFloorY,
-  };
-}
-
-type StairRamp = {
-  args: [number, number, number];
-  position: [number, number, number];
-  rotation: [number, number, number];
-};
-
-function buildStairRamp(
-  stairsBounds: Box3,
-  floorSurfaceY: number,
-  elevatedFloorY: number,
-): StairRamp {
-  const bottomZ = stairsBounds.min.z + 0.4;
-  const topZ = stairsBounds.max.z;
-  const bottomY = floorSurfaceY;
-  const topY = elevatedFloorY;
-  const run = Math.max(topZ - bottomZ, 0.5);
-  const rise = Math.max(topY - bottomY, 0.5);
-  const length = Math.hypot(run, rise);
-  const angle = Math.atan2(rise, run);
-  const width = Math.min(stairsBounds.max.x - stairsBounds.min.x, 9) * 0.85;
-  const thickness = 0.3;
-  const midX = (stairsBounds.min.x + stairsBounds.max.x) * 0.5;
-  const midY = bottomY + rise * 0.5;
-  const midZ = bottomZ + run * 0.5;
-  // Offset the cuboid so its top face lies on the ramp surface.
-  const cos = run / length;
-  const sin = rise / length;
-
-  return {
-    args: [width * 0.5, thickness * 0.5, length * 0.5],
-    position: [midX, midY - cos * (thickness * 0.5), midZ + sin * (thickness * 0.5)],
-    // Negative X rotation raises the +Z end to match a ramp climbing toward +Z.
-    rotation: [-angle, 0, 0],
   };
 }
 
@@ -229,15 +189,6 @@ function LobbyRoom() {
     );
     const spawnYaw = Math.PI;
 
-    const stairRamp =
-      prepared.stairsBounds && prepared.elevatedFloorY != null
-        ? buildStairRamp(
-            prepared.stairsBounds,
-            floorSurfaceY,
-            prepared.elevatedFloorY,
-          )
-        : null;
-
     return {
       room: prepared.room,
       staticColliders: prepared.staticColliders,
@@ -246,7 +197,6 @@ function LobbyRoom() {
       floorSurfaceY,
       spawnPoint,
       spawnYaw,
-      stairRamp,
     };
   }, [scene]);
 
@@ -272,15 +222,6 @@ function LobbyRoom() {
           ]}
         />
       </RigidBody>
-      {layout.stairRamp ? (
-        <RigidBody type="fixed" colliders={false} friction={1}>
-          <CuboidCollider
-            args={layout.stairRamp.args}
-            position={layout.stairRamp.position}
-            rotation={layout.stairRamp.rotation}
-          />
-        </RigidBody>
-      ) : null}
       {/* includeInvisible is required: the collider clones' meshes are
           visible=false, and rapier skips invisible meshes by default. */}
       <RigidBody
@@ -321,9 +262,8 @@ function Player() {
     controller.setSlideEnabled(true);
     controller.enableSnapToGround(SNAP_TO_GROUND);
     controller.enableAutostep(AUTO_STEP_MAX_HEIGHT, AUTO_STEP_MIN_WIDTH, true);
-    // ~45° covers the stair ramp (~30°) without letting the player walk up walls.
-    controller.setMaxSlopeClimbAngle((45 * Math.PI) / 180);
-    controller.setMinSlopeSlideAngle((55 * Math.PI) / 180);
+    controller.setMaxSlopeClimbAngle((MAX_SLOPE_CLIMB_DEG * Math.PI) / 180);
+    controller.setMinSlopeSlideAngle((50 * Math.PI) / 180);
     characterControllerRef.current = controller;
 
     return () => {

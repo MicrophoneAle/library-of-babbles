@@ -79,7 +79,7 @@ scripts/
 
 The lobby GLB is loaded in its authored orientation (no corrective flip). Floor height and spawn placement are derived from `Lobby_Floor_Walls` bounds. The player spawns on the ground floor near the −Z wall, facing +Z toward the stairs / elevated floor.
 
-Static colliders: the elevated floor uses a trimesh; the stair flight uses an invisible ramp cuboid (~30°) so the character controller walks it as a continuous slope instead of discrete tall risers.
+Static trimesh colliders (stairs, elevated floor) use invisible mesh clones with `includeInvisible` on the `RigidBody`, because Rapier skips `visible={false}` meshes by default. Stair ascent is handled by character-controller autostep tuning (not a separate ramp collider).
 
 To inspect the GLB offline:
 
