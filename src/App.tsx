@@ -18,12 +18,16 @@ import { useGameStore } from "./store/gameStore";
 useGLTF.preload("/assets/lobby/room_lobby.glb");
 
 const MOVE_SPEED = 5;
+const STAIR_MOVE_SPEED = 6.5;
 const GRAVITY = -29.4;
 const TERMINAL_VELOCITY = -55;
-const SNAP_TO_GROUND = 0.35;
+const SNAP_TO_GROUND = 0.12;
 // How high / how little forward space a ledge needs for the controller to step onto it.
 const AUTO_STEP_MAX_HEIGHT = 1.25;
-const AUTO_STEP_MIN_WIDTH = 0.2;
+const AUTO_STEP_MIN_WIDTH = 0.05;
+const CHARACTER_OFFSET = 0.04;
+const CLIMB_GRACE_STEPS = 8;
+const MOVE_SUBSTEPS = 3;
 const STANDING_EYE_HEIGHT = 1.6;
 // Total capsule height = 2 * (half height + radius) = 1.4 m, 0.4 m wide.
 const CAPSULE_HALF_HEIGHT = 0.5;
@@ -249,6 +253,8 @@ function Player() {
   /** Vertical velocity in m/s (not displacement). */
   const vy = useRef(0);
   const isGrounded = useRef(false);
+  /** Frames remaining where we treat the player as climbing (skip gravity / snap fight). */
+  const climbGrace = useRef(0);
 
   const forward = useMemo(() => new Vector3(), []);
   const right = useMemo(() => new Vector3(), []);
@@ -256,10 +262,12 @@ function Player() {
   const up = useMemo(() => new Vector3(0, 1, 0), []);
 
   useEffect(() => {
-    const controller = world.createCharacterController(0.08);
+    const controller = world.createCharacterController(CHARACTER_OFFSET);
+    controller.setSlideEnabled(true);
     controller.enableSnapToGround(SNAP_TO_GROUND);
     controller.enableAutostep(AUTO_STEP_MAX_HEIGHT, AUTO_STEP_MIN_WIDTH, true);
-    controller.setMaxSlopeClimbAngle((60 * Math.PI) / 180);
+    controller.setMaxSlopeClimbAngle((55 * Math.PI) / 180);
+    controller.setMinSlopeSlideAngle((50 * Math.PI) / 180);
     characterControllerRef.current = controller;
 
     return () => {
@@ -303,6 +311,7 @@ function Player() {
     pitch.current = 0;
     vy.current = 0;
     isGrounded.current = false;
+    climbGrace.current = 0;
     hasSpawned.current = true;
   }, [spawnPoint, spawnYaw]);
 
@@ -322,34 +331,66 @@ function Player() {
     // NOT the render delta. Integrating with the render delta under-applies
     // gravity on high-refresh displays.
     const delta = world.timestep;
+    const move = moveDirection.current;
+    const isMoving = move.x !== 0 || move.z !== 0;
+    const climbing = climbGrace.current > 0;
 
-    if (isGrounded.current) {
+    if (climbing) {
+      climbGrace.current -= 1;
       vy.current = 0;
+      controller.disableSnapToGround();
+    } else if (isGrounded.current) {
+      vy.current = 0;
+      controller.enableSnapToGround(SNAP_TO_GROUND);
     } else {
       vy.current += GRAVITY * delta;
       vy.current = Math.max(vy.current, TERMINAL_VELOCITY);
+      controller.enableSnapToGround(SNAP_TO_GROUND);
     }
 
-    const move = moveDirection.current;
-    const desiredTranslation = {
-      x: move.x * MOVE_SPEED * delta,
-      y: vy.current * delta,
-      z: move.z * MOVE_SPEED * delta,
-    };
+    // Slightly faster while climbing so vertical autostep time doesn't feel like a stall.
+    const speed = climbing ? STAIR_MOVE_SPEED : MOVE_SPEED;
 
-    controller.computeColliderMovement(collider, desiredTranslation);
+    // Substep movement so tall risers resolve as several small climbs instead of one
+    // jammed collision that eats most of the frame's horizontal travel.
+    const substeps = isMoving ? MOVE_SUBSTEPS : 1;
+    const subDelta = delta / substeps;
+    let position = body.translation();
+    let steppedUp = false;
 
-    const computedStep = controller.computedMovement();
-    const position = body.translation();
+    for (let i = 0; i < substeps; i++) {
+      const desiredTranslation = {
+        x: move.x * speed * subDelta,
+        y: climbing || isGrounded.current ? 0 : vy.current * subDelta,
+        z: move.z * speed * subDelta,
+      };
 
-    body.setNextKinematicTranslation({
-      x: position.x + computedStep.x,
-      y: position.y + computedStep.y,
-      z: position.z + computedStep.z,
-    });
+      controller.computeColliderMovement(collider, desiredTranslation);
+      const computedStep = controller.computedMovement();
 
-    isGrounded.current = controller.computedGrounded();
-    if (isGrounded.current) {
+      if (computedStep.y > 0.002) {
+        steppedUp = true;
+      }
+
+      position = {
+        x: position.x + computedStep.x,
+        y: position.y + computedStep.y,
+        z: position.z + computedStep.z,
+      };
+
+      // Keep the kinematic body in sync between substeps so the next query
+      // starts from the post-step pose (critical for chaining stair climbs).
+      body.setNextKinematicTranslation(position);
+      body.setTranslation(position, false);
+
+      isGrounded.current = controller.computedGrounded();
+    }
+
+    if (steppedUp) {
+      climbGrace.current = CLIMB_GRACE_STEPS;
+      vy.current = 0;
+      isGrounded.current = true;
+    } else if (isGrounded.current) {
       vy.current = 0;
     }
   });
