@@ -17,10 +17,10 @@ import { useGameStore } from "./store/gameStore";
 
 useGLTF.preload("/assets/lobby/room_lobby.glb");
 
-const MOVE_SPEED = 6;
-const GRAVITY = -29.4;
-const TERMINAL_VELOCITY = -55;
-const SNAP_TO_GROUND = 0.18;
+const MOVE_SPEED = 3.5;
+const GRAVITY = -39.24; // ~4× Earth — snappy falls, less float off ledges/stairs
+const TERMINAL_VELOCITY = -28;
+const SNAP_TO_GROUND = 0.25;
 // Tuned for one tall stair riser — high enough to clear steps, low enough to
 // avoid leaping several at once and jamming.
 const AUTO_STEP_MAX_HEIGHT = 1.0;
