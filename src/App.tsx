@@ -18,16 +18,13 @@ import { useGameStore } from "./store/gameStore";
 useGLTF.preload("/assets/lobby/room_lobby.glb");
 
 const MOVE_SPEED = 5;
-const STAIR_MOVE_SPEED = 6.5;
 const GRAVITY = -29.4;
 const TERMINAL_VELOCITY = -55;
-const SNAP_TO_GROUND = 0.12;
-// How high / how little forward space a ledge needs for the controller to step onto it.
-const AUTO_STEP_MAX_HEIGHT = 1.25;
-const AUTO_STEP_MIN_WIDTH = 0.05;
-const CHARACTER_OFFSET = 0.04;
-const CLIMB_GRACE_STEPS = 8;
-const MOVE_SUBSTEPS = 3;
+const SNAP_TO_GROUND = 0.2;
+// Small ledges only — the stair flight uses a smooth ramp collider instead.
+const AUTO_STEP_MAX_HEIGHT = 0.4;
+const AUTO_STEP_MIN_WIDTH = 0.15;
+const CHARACTER_OFFSET = 0.05;
 const STANDING_EYE_HEIGHT = 1.6;
 // Total capsule height = 2 * (half height + radius) = 1.4 m, 0.4 m wide.
 const CAPSULE_HALF_HEIGHT = 0.5;
@@ -122,8 +119,10 @@ function prepareRoomContent(source: Object3D) {
   const room = source.clone(true);
   room.updateMatrixWorld(true);
 
-  // Group of invisible mesh clones that receive trimesh colliders.
+  // Invisible mesh clones for trimesh colliders (elevated floor only — stairs
+  // use a smooth ramp so the character controller can walk them continuously).
   const staticColliders = new Group();
+  let stairsBounds: Box3 | null = null;
 
   const sketchfab = room.getObjectByName("Sketchfab_model");
   const stairsSource = sketchfab ? findStairsNode(sketchfab) : findStairsNode(room);
@@ -140,13 +139,14 @@ function prepareRoomContent(source: Object3D) {
     stairs.scale.copy(scale);
     stairs.updateMatrixWorld(true);
     room.add(stairs);
-
-    staticColliders.add(makeInvisibleColliderClone(stairs));
+    stairsBounds = new Box3().setFromObject(stairs);
   }
 
   const elevatedFloor = room.getObjectByName("Lobby_Elevated_Floor");
+  let elevatedFloorY: number | null = null;
   if (elevatedFloor) {
     staticColliders.add(makeInvisibleColliderClone(elevatedFloor));
+    elevatedFloorY = new Box3().setFromObject(elevatedFloor).min.y;
   }
 
   sketchfab?.parent?.remove(sketchfab);
@@ -162,6 +162,44 @@ function prepareRoomContent(source: Object3D) {
     room,
     staticColliders,
     floorBounds,
+    stairsBounds,
+    elevatedFloorY,
+  };
+}
+
+type StairRamp = {
+  args: [number, number, number];
+  position: [number, number, number];
+  rotation: [number, number, number];
+};
+
+function buildStairRamp(
+  stairsBounds: Box3,
+  floorSurfaceY: number,
+  elevatedFloorY: number,
+): StairRamp {
+  const bottomZ = stairsBounds.min.z + 0.4;
+  const topZ = stairsBounds.max.z;
+  const bottomY = floorSurfaceY;
+  const topY = elevatedFloorY;
+  const run = Math.max(topZ - bottomZ, 0.5);
+  const rise = Math.max(topY - bottomY, 0.5);
+  const length = Math.hypot(run, rise);
+  const angle = Math.atan2(rise, run);
+  const width = Math.min(stairsBounds.max.x - stairsBounds.min.x, 9) * 0.85;
+  const thickness = 0.3;
+  const midX = (stairsBounds.min.x + stairsBounds.max.x) * 0.5;
+  const midY = bottomY + rise * 0.5;
+  const midZ = bottomZ + run * 0.5;
+  // Offset the cuboid so its top face lies on the ramp surface.
+  const cos = run / length;
+  const sin = rise / length;
+
+  return {
+    args: [width * 0.5, thickness * 0.5, length * 0.5],
+    position: [midX, midY - cos * (thickness * 0.5), midZ + sin * (thickness * 0.5)],
+    // Negative X rotation raises the +Z end to match a ramp climbing toward +Z.
+    rotation: [-angle, 0, 0],
   };
 }
 
@@ -184,12 +222,21 @@ function LobbyRoom() {
     const spawnInset = 2.5;
     const spawnPoint = new Vector3(
       center.x,
-      // Clearance must exceed the character controller contact offset (0.08)
+      // Clearance must exceed the character controller contact offset
       // so the capsule doesn't start the first step in penetration.
       floorSurfaceY + CAPSULE_BOTTOM_OFFSET + 0.1,
       floorBounds.min.z + spawnInset,
     );
     const spawnYaw = Math.PI;
+
+    const stairRamp =
+      prepared.stairsBounds && prepared.elevatedFloorY != null
+        ? buildStairRamp(
+            prepared.stairsBounds,
+            floorSurfaceY,
+            prepared.elevatedFloorY,
+          )
+        : null;
 
     return {
       room: prepared.room,
@@ -199,6 +246,7 @@ function LobbyRoom() {
       floorSurfaceY,
       spawnPoint,
       spawnYaw,
+      stairRamp,
     };
   }, [scene]);
 
@@ -224,6 +272,15 @@ function LobbyRoom() {
           ]}
         />
       </RigidBody>
+      {layout.stairRamp ? (
+        <RigidBody type="fixed" colliders={false} friction={1}>
+          <CuboidCollider
+            args={layout.stairRamp.args}
+            position={layout.stairRamp.position}
+            rotation={layout.stairRamp.rotation}
+          />
+        </RigidBody>
+      ) : null}
       {/* includeInvisible is required: the collider clones' meshes are
           visible=false, and rapier skips invisible meshes by default. */}
       <RigidBody
@@ -253,8 +310,6 @@ function Player() {
   /** Vertical velocity in m/s (not displacement). */
   const vy = useRef(0);
   const isGrounded = useRef(false);
-  /** Frames remaining where we treat the player as climbing (skip gravity / snap fight). */
-  const climbGrace = useRef(0);
 
   const forward = useMemo(() => new Vector3(), []);
   const right = useMemo(() => new Vector3(), []);
@@ -266,8 +321,9 @@ function Player() {
     controller.setSlideEnabled(true);
     controller.enableSnapToGround(SNAP_TO_GROUND);
     controller.enableAutostep(AUTO_STEP_MAX_HEIGHT, AUTO_STEP_MIN_WIDTH, true);
-    controller.setMaxSlopeClimbAngle((55 * Math.PI) / 180);
-    controller.setMinSlopeSlideAngle((50 * Math.PI) / 180);
+    // ~45° covers the stair ramp (~30°) without letting the player walk up walls.
+    controller.setMaxSlopeClimbAngle((45 * Math.PI) / 180);
+    controller.setMinSlopeSlideAngle((55 * Math.PI) / 180);
     characterControllerRef.current = controller;
 
     return () => {
@@ -311,7 +367,6 @@ function Player() {
     pitch.current = 0;
     vy.current = 0;
     isGrounded.current = false;
-    climbGrace.current = 0;
     hasSpawned.current = true;
   }, [spawnPoint, spawnYaw]);
 
@@ -331,66 +386,34 @@ function Player() {
     // NOT the render delta. Integrating with the render delta under-applies
     // gravity on high-refresh displays.
     const delta = world.timestep;
-    const move = moveDirection.current;
-    const isMoving = move.x !== 0 || move.z !== 0;
-    const climbing = climbGrace.current > 0;
 
-    if (climbing) {
-      climbGrace.current -= 1;
+    if (isGrounded.current) {
       vy.current = 0;
-      controller.disableSnapToGround();
-    } else if (isGrounded.current) {
-      vy.current = 0;
-      controller.enableSnapToGround(SNAP_TO_GROUND);
     } else {
       vy.current += GRAVITY * delta;
       vy.current = Math.max(vy.current, TERMINAL_VELOCITY);
-      controller.enableSnapToGround(SNAP_TO_GROUND);
     }
 
-    // Slightly faster while climbing so vertical autostep time doesn't feel like a stall.
-    const speed = climbing ? STAIR_MOVE_SPEED : MOVE_SPEED;
+    const move = moveDirection.current;
+    const desiredTranslation = {
+      x: move.x * MOVE_SPEED * delta,
+      y: vy.current * delta,
+      z: move.z * MOVE_SPEED * delta,
+    };
 
-    // Substep movement so tall risers resolve as several small climbs instead of one
-    // jammed collision that eats most of the frame's horizontal travel.
-    const substeps = isMoving ? MOVE_SUBSTEPS : 1;
-    const subDelta = delta / substeps;
-    let position = body.translation();
-    let steppedUp = false;
+    controller.computeColliderMovement(collider, desiredTranslation);
 
-    for (let i = 0; i < substeps; i++) {
-      const desiredTranslation = {
-        x: move.x * speed * subDelta,
-        y: climbing || isGrounded.current ? 0 : vy.current * subDelta,
-        z: move.z * speed * subDelta,
-      };
+    const computedStep = controller.computedMovement();
+    const position = body.translation();
 
-      controller.computeColliderMovement(collider, desiredTranslation);
-      const computedStep = controller.computedMovement();
+    body.setNextKinematicTranslation({
+      x: position.x + computedStep.x,
+      y: position.y + computedStep.y,
+      z: position.z + computedStep.z,
+    });
 
-      if (computedStep.y > 0.002) {
-        steppedUp = true;
-      }
-
-      position = {
-        x: position.x + computedStep.x,
-        y: position.y + computedStep.y,
-        z: position.z + computedStep.z,
-      };
-
-      // Keep the kinematic body in sync between substeps so the next query
-      // starts from the post-step pose (critical for chaining stair climbs).
-      body.setNextKinematicTranslation(position);
-      body.setTranslation(position, false);
-
-      isGrounded.current = controller.computedGrounded();
-    }
-
-    if (steppedUp) {
-      climbGrace.current = CLIMB_GRACE_STEPS;
-      vy.current = 0;
-      isGrounded.current = true;
-    } else if (isGrounded.current) {
+    isGrounded.current = controller.computedGrounded();
+    if (isGrounded.current) {
       vy.current = 0;
     }
   });
