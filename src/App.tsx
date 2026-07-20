@@ -197,11 +197,11 @@ function prepareRoomContent(source: Object3D) {
   }
 
   // Columns — collect first, then clone, so we don't mutate the hierarchy
-  // mid-traversal. (Named Tall_Column_* in the current GLB, Cylinder.* before.)
+  // mid-traversal. Matches Tall_Column_*, Upper_Short_Column_*, Cylinder.*, etc.
   const columnSources: Object3D[] = [];
   room.traverse((object) => {
     if (
-      object.name.startsWith("Tall_Column") ||
+      object.name.includes("Column") ||
       object.name.startsWith("Cylinder")
     ) {
       columnSources.push(object);
