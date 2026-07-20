@@ -21,11 +21,18 @@ import {
   Vector3,
 } from "three";
 
-import { useGameStore } from "./store/gameStore";
+import { useGameStore, type MoveSpeedMode } from "./store/gameStore";
 
 useGLTF.preload("/assets/lobby/room_lobby.glb");
 
-const MOVE_SPEED = 3.5;
+const MOVE_SPEED_SLOW = 1.75;
+const MOVE_SPEED_MEDIUM = 3.5;
+const MOVE_SPEED_FAST = 5.5;
+const MOVE_SPEED_BY_MODE = {
+  slow: MOVE_SPEED_SLOW,
+  medium: MOVE_SPEED_MEDIUM,
+  fast: MOVE_SPEED_FAST,
+} as const;
 const GRAVITY = -39.24; // ~4× Earth — snappy falls, less float off ledges/stairs
 const TERMINAL_VELOCITY = -28;
 const SNAP_TO_GROUND = 0.25;
@@ -305,6 +312,10 @@ function LobbyRoom() {
 function Player() {
   const spawnPoint = useGameStore((state) => state.spawnPoint);
   const spawnYaw = useGameStore((state) => state.spawnYaw);
+  const moveSpeedMode = useGameStore((state) => state.moveSpeedMode);
+  const cycleMoveSpeedFromKey = useGameStore(
+    (state) => state.cycleMoveSpeedFromKey,
+  );
   const bodyRef = useRef<RapierRigidBody>(null);
   const characterControllerRef = useRef<KinematicCharacterController | null>(null);
   const keys = useKeyboard();
@@ -317,11 +328,31 @@ function Player() {
   /** Vertical velocity in m/s (not displacement). */
   const vy = useRef(0);
   const isGrounded = useRef(false);
+  const moveSpeedModeRef = useRef(moveSpeedMode);
+  moveSpeedModeRef.current = moveSpeedMode;
 
   const forward = useMemo(() => new Vector3(), []);
   const right = useMemo(() => new Vector3(), []);
   const direction = useMemo(() => new Vector3(), []);
   const up = useMemo(() => new Vector3(0, 1, 0), []);
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.repeat) {
+        return;
+      }
+      if (event.code === "KeyC") {
+        cycleMoveSpeedFromKey("slow");
+      } else if (event.code === "KeyV") {
+        cycleMoveSpeedFromKey("fast");
+      }
+    };
+
+    window.addEventListener("keydown", onKeyDown);
+    return () => {
+      window.removeEventListener("keydown", onKeyDown);
+    };
+  }, [cycleMoveSpeedFromKey]);
 
   useEffect(() => {
     const controller = world.createCharacterController(CHARACTER_OFFSET);
@@ -401,10 +432,11 @@ function Player() {
     }
 
     const move = moveDirection.current;
+    const speed = MOVE_SPEED_BY_MODE[moveSpeedModeRef.current];
     const desiredTranslation = {
-      x: move.x * MOVE_SPEED * delta,
+      x: move.x * speed * delta,
       y: vy.current * delta,
-      z: move.z * MOVE_SPEED * delta,
+      z: move.z * speed * delta,
     };
 
     controller.computeColliderMovement(collider, desiredTranslation);
@@ -604,11 +636,44 @@ function KeyCap({
   );
 }
 
+const SPEED_LABELS: Record<MoveSpeedMode, string> = {
+  slow: "SLOW",
+  medium: "WALK",
+  fast: "FAST",
+};
+
+const SPEED_ORDER: MoveSpeedMode[] = ["slow", "medium", "fast"];
+
+function SpeedIndicator() {
+  const mode = useGameStore((state) => state.moveSpeedMode);
+
+  return (
+    <div className="flex h-[4.75rem] flex-col justify-between rounded border border-white/35 bg-black/30 px-2.5 py-1.5">
+      <div className="flex flex-col gap-0.5">
+        {SPEED_ORDER.map((tier) => {
+          const active = tier === mode;
+          return (
+            <div
+              key={tier}
+              className={`text-[10px] font-semibold tracking-wide transition-colors duration-75 ${
+                active ? "text-white" : "text-white/35"
+              }`}
+            >
+              {SPEED_LABELS[tier]}
+            </div>
+          );
+        })}
+      </div>
+      <div className="text-[9px] tracking-wider text-white/45">C · V</div>
+    </div>
+  );
+}
+
 function MovementKeys() {
   const pressed = useMovementPressed();
 
   return (
-    <div className="absolute bottom-6 left-6 select-none">
+    <div className="absolute bottom-6 left-6 flex items-end gap-3 select-none">
       <div
         className="grid gap-1"
         style={{
@@ -633,6 +698,7 @@ function MovementKeys() {
           <KeyCap label="→" active={pressed.right} />
         </div>
       </div>
+      <SpeedIndicator />
     </div>
   );
 }

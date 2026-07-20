@@ -37,6 +37,8 @@ Open [http://localhost:5173](http://localhost:5173). Click the canvas to lock th
 |-------|--------|
 | Click canvas | Pointer lock (mouse look) |
 | W / A / S / D or arrow keys | Move |
+| C | Slow speed (press again for walk) |
+| V | Fast speed (press again for walk) |
 | Mouse | Look around |
 
 ### ABEL proxy (optional)
