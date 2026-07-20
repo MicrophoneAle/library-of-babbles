@@ -11,7 +11,15 @@ import {
 } from "@react-three/rapier";
 import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import type { KinematicCharacterController } from "@dimforge/rapier3d-compat";
-import { Box3, Group, Object3D, Quaternion, Vector3 } from "three";
+import {
+  Box3,
+  DoubleSide,
+  Group,
+  Mesh,
+  Object3D,
+  Quaternion,
+  Vector3,
+} from "three";
 
 import { useGameStore } from "./store/gameStore";
 
@@ -134,9 +142,33 @@ function cloneWithWorldTransform(source: Object3D) {
   return clone;
 }
 
+/** Force every mesh material to render fully opaque (no alpha blending,
+ *  depth-write on, both faces drawn) so thin geometry like column bases
+ *  can't appear see-through. */
+function forceOpaqueMaterials(root: Object3D) {
+  root.traverse((child) => {
+    const mesh = child as Mesh;
+    if (!mesh.isMesh) {
+      return;
+    }
+    const materials = Array.isArray(mesh.material)
+      ? mesh.material
+      : [mesh.material];
+    for (const material of materials) {
+      material.transparent = false;
+      material.opacity = 1;
+      material.alphaTest = 0;
+      material.depthWrite = true;
+      material.side = DoubleSide;
+      material.needsUpdate = true;
+    }
+  });
+}
+
 function prepareRoomContent(source: Object3D) {
   const room = source.clone(true);
   room.updateMatrixWorld(true);
+  forceOpaqueMaterials(room);
 
   // Invisible mesh clones for trimesh colliders (stairs + elevated floor).
   const staticColliders = new Group();
@@ -164,11 +196,14 @@ function prepareRoomContent(source: Object3D) {
     );
   }
 
-  // Columns (Cylinder.* nodes) — collect first, then clone, so we don't
-  // mutate the hierarchy mid-traversal.
+  // Columns — collect first, then clone, so we don't mutate the hierarchy
+  // mid-traversal. (Named Tall_Column_* in the current GLB, Cylinder.* before.)
   const columnSources: Object3D[] = [];
   room.traverse((object) => {
-    if (object.name.startsWith("Cylinder")) {
+    if (
+      object.name.startsWith("Tall_Column") ||
+      object.name.startsWith("Cylinder")
+    ) {
       columnSources.push(object);
     }
   });
