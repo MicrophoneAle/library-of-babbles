@@ -3,6 +3,8 @@ import { create } from "zustand";
 
 export type MoveSpeedMode = "slow" | "medium" | "fast";
 
+const SPEED_ORDER: MoveSpeedMode[] = ["slow", "medium", "fast"];
+
 interface GameState {
   currentRoom: string;
   spawnPoint: Vector3;
@@ -12,8 +14,8 @@ interface GameState {
   setSpawnPoint: (point: Vector3, yaw?: number) => void;
   setFloorSurfaceY: (y: number) => void;
   setMoveSpeedMode: (mode: MoveSpeedMode) => void;
-  /** C → slow (toggle back to medium). V → fast (toggle back to medium). */
-  cycleMoveSpeedFromKey: (key: "slow" | "fast") => void;
+  /** C → one step slower. V → one step faster. */
+  adjustMoveSpeed: (direction: "slower" | "faster") => void;
 }
 
 export const useGameStore = create<GameState>((set, get) => ({
@@ -26,12 +28,13 @@ export const useGameStore = create<GameState>((set, get) => ({
     set({ spawnPoint: point.clone(), spawnYaw: yaw }),
   setFloorSurfaceY: (y) => set({ floorSurfaceY: y }),
   setMoveSpeedMode: (mode) => set({ moveSpeedMode: mode }),
-  cycleMoveSpeedFromKey: (key) => {
+  adjustMoveSpeed: (direction) => {
     const current = get().moveSpeedMode;
-    if (key === "slow") {
-      set({ moveSpeedMode: current === "slow" ? "medium" : "slow" });
-      return;
-    }
-    set({ moveSpeedMode: current === "fast" ? "medium" : "fast" });
+    const index = SPEED_ORDER.indexOf(current);
+    const nextIndex =
+      direction === "slower"
+        ? Math.max(0, index - 1)
+        : Math.min(SPEED_ORDER.length - 1, index + 1);
+    set({ moveSpeedMode: SPEED_ORDER[nextIndex] });
   },
 }));

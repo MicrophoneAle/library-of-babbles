@@ -313,9 +313,7 @@ function Player() {
   const spawnPoint = useGameStore((state) => state.spawnPoint);
   const spawnYaw = useGameStore((state) => state.spawnYaw);
   const moveSpeedMode = useGameStore((state) => state.moveSpeedMode);
-  const cycleMoveSpeedFromKey = useGameStore(
-    (state) => state.cycleMoveSpeedFromKey,
-  );
+  const adjustMoveSpeed = useGameStore((state) => state.adjustMoveSpeed);
   const bodyRef = useRef<RapierRigidBody>(null);
   const characterControllerRef = useRef<KinematicCharacterController | null>(null);
   const keys = useKeyboard();
@@ -342,9 +340,9 @@ function Player() {
         return;
       }
       if (event.code === "KeyC") {
-        cycleMoveSpeedFromKey("slow");
+        adjustMoveSpeed("slower");
       } else if (event.code === "KeyV") {
-        cycleMoveSpeedFromKey("fast");
+        adjustMoveSpeed("faster");
       }
     };
 
@@ -352,7 +350,7 @@ function Player() {
     return () => {
       window.removeEventListener("keydown", onKeyDown);
     };
-  }, [cycleMoveSpeedFromKey]);
+  }, [adjustMoveSpeed]);
 
   useEffect(() => {
     const controller = world.createCharacterController(CHARACTER_OFFSET);
