@@ -118,6 +118,22 @@ function makeInvisibleColliderClone(source: Object3D) {
   return clone;
 }
 
+/** Clone a node and bake its world transform onto the clone, so it can be
+ *  re-parented under an identity group (the static collider group). */
+function cloneWithWorldTransform(source: Object3D) {
+  const position = new Vector3();
+  const quaternion = new Quaternion();
+  const scale = new Vector3();
+  source.matrixWorld.decompose(position, quaternion, scale);
+
+  const clone = source.clone(true);
+  clone.position.copy(position);
+  clone.quaternion.copy(quaternion);
+  clone.scale.copy(scale);
+  clone.updateMatrixWorld(true);
+  return clone;
+}
+
 function prepareRoomContent(source: Object3D) {
   const room = source.clone(true);
   room.updateMatrixWorld(true);
@@ -129,16 +145,7 @@ function prepareRoomContent(source: Object3D) {
   const stairsSource = sketchfab ? findStairsNode(sketchfab) : findStairsNode(room);
 
   if (stairsSource) {
-    const position = new Vector3();
-    const quaternion = new Quaternion();
-    const scale = new Vector3();
-    stairsSource.matrixWorld.decompose(position, quaternion, scale);
-
-    const stairs = stairsSource.clone(true);
-    stairs.position.copy(position);
-    stairs.quaternion.copy(quaternion);
-    stairs.scale.copy(scale);
-    stairs.updateMatrixWorld(true);
+    const stairs = cloneWithWorldTransform(stairsSource);
     room.add(stairs);
     staticColliders.add(makeInvisibleColliderClone(stairs));
   }
@@ -146,6 +153,29 @@ function prepareRoomContent(source: Object3D) {
   const elevatedFloor = room.getObjectByName("Lobby_Elevated_Floor");
   if (elevatedFloor) {
     staticColliders.add(makeInvisibleColliderClone(elevatedFloor));
+  }
+
+  // Walls + ceiling: the floor/walls shell gets a full trimesh collider so the
+  // player can't leave the room. (Floor grounding still uses the cuboid.)
+  const wallsMesh = room.getObjectByName("Lobby_Floor_Walls");
+  if (wallsMesh) {
+    staticColliders.add(
+      makeInvisibleColliderClone(cloneWithWorldTransform(wallsMesh)),
+    );
+  }
+
+  // Columns (Cylinder.* nodes) — collect first, then clone, so we don't
+  // mutate the hierarchy mid-traversal.
+  const columnSources: Object3D[] = [];
+  room.traverse((object) => {
+    if (object.name.startsWith("Cylinder")) {
+      columnSources.push(object);
+    }
+  });
+  for (const column of columnSources) {
+    staticColliders.add(
+      makeInvisibleColliderClone(cloneWithWorldTransform(column)),
+    );
   }
 
   sketchfab?.parent?.remove(sketchfab);
