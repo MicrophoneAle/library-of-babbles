@@ -952,7 +952,7 @@ const SPEED_LABELS: Record<MoveSpeedMode, string> = {
   fast: "FAST",
 };
 
-const SPEED_ORDER: MoveSpeedMode[] = ["slow", "medium", "fast"];
+const SPEED_DISPLAY_ORDER: MoveSpeedMode[] = ["fast", "medium", "slow"];
 
 function SpeedIndicator() {
   const mode = useGameStore((state) => state.moveSpeedMode);
@@ -960,7 +960,7 @@ function SpeedIndicator() {
   return (
     <div className="flex h-[4.75rem] flex-col justify-between rounded border border-white/35 bg-black/30 px-2.5 py-1.5">
       <div className="flex flex-col gap-0.5">
-        {SPEED_ORDER.map((tier) => {
+        {SPEED_DISPLAY_ORDER.map((tier) => {
           const active = tier === mode;
           return (
             <div
@@ -974,7 +974,15 @@ function SpeedIndicator() {
           );
         })}
       </div>
-      <div className="text-[9px] tracking-wider text-white/45">C · V</div>
+      <div className="flex items-center gap-2 text-[9px] tracking-wider text-white/45">
+        <span>
+          C <span aria-hidden="true">↓</span>
+        </span>
+        <span>·</span>
+        <span>
+          V <span aria-hidden="true">↑</span>
+        </span>
+      </div>
     </div>
   );
 }
