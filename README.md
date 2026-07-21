@@ -107,6 +107,69 @@ scripts/
   inspect-glb.mjs         # Dump GLB node hierarchy and mesh bounds
 ```
 
+## Lobby layout & objects
+
+The lobby is a rectangular hall (~20 m wide × ~30 m deep) with dark wood PBR textures (textured asset) or grey placeholder materials (fallback asset). Both GLBs share the same node hierarchy.
+
+### Top-down layout (+Z = toward stairs / mezzanine)
+
+```
+                    +Z (stairs, elevated floor)
+                           ↑ spawn faces this way
+    ┌──────────────────────────────────────────┐
+    │  Upper_Short_Column_2    Upper_Short_Column_1  │  ← short columns (+Z wall)
+    │         │                          │           │
+    │  Lower_Short_Column_2    Lower_Short_Column_1  │
+    │                                            │
+    │  Tall_Column_4              Tall_Column_3    │  ← mid-room (z ≈ 0)
+    │         │                          │           │
+    │              [ LECTERN ]                   │  ← center, ground floor
+    │         │                          │           │
+    │  Tall_Column_2              Tall_Column_1    │  ← rear (z ≈ −15)
+    │                                            │
+    │         ★ SPAWN (near −Z wall)           │
+    └──────────────────────────────────────────┘
+                    −Z (entry / back wall)
+         ← −X                              +X →
+```
+
+### Scene objects
+
+| Node | Type | Location / role |
+|------|------|-----------------|
+| `Lobby_Floor_Walls` | Mesh | Main shell — ground floor, walls, and ceiling (~20 × 30 m footprint) |
+| `Lobby_Elevated_Floor` | Mesh | Mezzanine / balcony deck at the **+Z** end, above the ground floor |
+| `Lobby_Stairs` / `Lobby_Stairs.001` | Mesh | Grand curved staircase connecting ground floor to the mezzanine (inside `Sketchfab_model`, re-parented at runtime as `Lobby_Stairs_Visual`) |
+| `Tall_Column_1` … `Tall_Column_4` | Mesh | Four full-height fluted columns at the mid-room corners (±7.5 m on X, z ≈ −15 and 0) |
+| `Upper_Short_Column_1/2` | Mesh | Upper halves of short columns on the **+Z** wall (y ≈ 11.5 m) |
+| `Lower_Short_Column_1/2` | Mesh | Lower halves of short columns on the **+Z** wall (y ≈ 3.5 m) |
+| `Ground_Baseboards` | Mesh | Perimeter baseboard / trim along the walls |
+| `Sketchfab_model.001` → lectern mesh | Mesh | Ornate wooden **lectern** on the ground floor, roughly centered |
+| `lectern_HP` … `lectern_HP8` | Empty nodes | Hotspot stubs reserved for future lectern interaction (no visible geometry) |
+| `MirrorPoint_Lobby` | Empty node | Authoring reference point |
+| `Object_4` | Empty node | Unused stub |
+| `Sketchfab_model` | Group (hidden) | Original Sketchfab import for stairs; hidden at runtime, stairs extracted for display + colliders |
+
+### Player spawn & orientation
+
+- **Spawn:** Ground floor, near the **−Z** back wall (2.5 m inset from the wall edge), centered on X
+- **Facing:** **+Z** — toward the lectern, stairs, and elevated floor
+- **Eye height:** 1.6 m (capsule-based first-person camera)
+
+### Colliders (physics)
+
+| Target | Collider type |
+|--------|---------------|
+| Ground floor | Cuboid under `Lobby_Floor_Walls` bounds |
+| Walls & ceiling | Trimesh from `Lobby_Floor_Walls` |
+| Elevated floor | Trimesh from `Lobby_Elevated_Floor` |
+| Stairs | Trimesh from `Lobby_Stairs.001` |
+| Columns (`*Column*`, `Cylinder*`) | Trimesh per column |
+| Baseboards (`Ground_Baseboards`, `Vert*`, name matches `baseboard/trim/plinth`) | Trimesh + perimeter cuboid fallback |
+| Lectern (`Sketchfab_model.001`) | World-baked trimesh + padded cuboid fallback |
+
+Stair climbing uses Rapier character-controller **autostep** (no separate ramp collider).
+
 ## Lobby loading & large assets
 
 The textured lobby is loaded via a custom fetch pipeline (`useLobbyGLTF`) rather than cloning the scene in memory:
@@ -124,9 +187,9 @@ const LOBBY_GLB = "/assets/lobby/room_lobby.glb";
 
 ## Lobby physics notes
 
-The lobby GLB is loaded in its authored orientation (no corrective flip). Floor height and spawn placement are derived from `Lobby_Floor_Walls` bounds. The player spawns on the ground floor near the −Z wall, facing +Z toward the stairs / elevated floor.
+The lobby GLB is loaded in its authored orientation (no corrective flip). Floor height and spawn placement are derived from `Lobby_Floor_Walls` bounds.
 
-Static trimesh colliders (stairs, elevated floor, walls, columns, baseboards, lectern) use invisible geometry-only meshes with `includeInvisible` on the `RigidBody`, because Rapier skips `visible={false}` meshes by default. Stair ascent is handled by character-controller autostep tuning (not a separate ramp collider).
+Static trimesh colliders use invisible geometry-only meshes with `includeInvisible` on the `RigidBody`, because Rapier skips `visible={false}` meshes by default. See **Colliders** in [Lobby layout & objects](#lobby-layout--objects) above for the full list.
 
 To inspect the GLB offline:
 
