@@ -1,4 +1,4 @@
-import { Environment, Html, PerspectiveCamera, useGLTF } from "@react-three/drei";
+import { Environment, Html, PerspectiveCamera } from "@react-three/drei";
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import {
   CapsuleCollider,
@@ -25,13 +25,10 @@ import {
 } from "three";
 
 import { useGameStore, type MoveSpeedMode } from "./store/gameStore";
-import {
-  createLobbyLoaderExtension,
-  useLobbyLoadStore,
-} from "./store/lobbyLoadStore";
+import { useLobbyGLTF } from "./hooks/useLobbyGLTF";
+import { useLobbyLoadStore } from "./store/lobbyLoadStore";
 
 const LOBBY_GLB = "/assets/lobby/room_lobby_textured_walls.glb";
-const lobbyLoaderExtension = createLobbyLoaderExtension();
 
 const MOVE_SPEED_SLOW = 1.75;
 const MOVE_SPEED_MEDIUM = 3.5;
@@ -426,9 +423,14 @@ function prepareRoomContent(source: Object3D): PreparedRoom {
 }
 
 function LobbyRoom() {
-  const { scene } = useGLTF(LOBBY_GLB, true, true, lobbyLoaderExtension);
+  const gltf = useLobbyGLTF(LOBBY_GLB);
+  const scene = gltf.scene;
   const setSpawnPoint = useGameStore((state) => state.setSpawnPoint);
   const setFloorSurfaceY = useGameStore((state) => state.setFloorSurfaceY);
+
+  useEffect(() => {
+    useLobbyLoadStore.getState().finish();
+  }, [gltf]);
 
   const layout = useMemo(() => {
     const prepared = prepareRoomContent(scene);
@@ -740,19 +742,20 @@ function Player() {
   );
 }
 
-function LobbyLoader() {
+function LobbyLoadingOverlay() {
+  const isLoading = useLobbyLoadStore((state) => state.isLoading);
   const progress = useLobbyLoadStore((state) => state.progress);
 
-  useEffect(() => {
-    useLobbyLoadStore.getState().reset();
-  }, []);
+  if (!isLoading) {
+    return null;
+  }
 
   return (
-    <Html center>
+    <div className="pointer-events-none absolute inset-0 z-20 flex items-center justify-center">
       <div className="min-w-[11rem] whitespace-nowrap rounded border border-white/35 bg-black/70 px-4 py-2 text-center text-sm text-white/90">
         Loading lobby… {Math.round(progress)}%
       </div>
-    </Html>
+    </div>
   );
 }
 
@@ -776,6 +779,7 @@ class SceneErrorBoundary extends Component<
   state = { error: null as Error | null };
 
   static getDerivedStateFromError(error: Error) {
+    useLobbyLoadStore.getState().cancel();
     return { error };
   }
 
@@ -803,7 +807,7 @@ function Scene() {
       <ambientLight intensity={0.5} />
       <directionalLight position={[5, 10, 5]} intensity={1} />
       <SceneErrorBoundary>
-        <Suspense fallback={<LobbyLoader />}>
+        <Suspense fallback={null}>
           <LobbyRoom />
         </Suspense>
       </SceneErrorBoundary>
@@ -999,6 +1003,7 @@ export default function App() {
         <Crosshair />
         <MovementKeys />
       </div>
+      <LobbyLoadingOverlay />
     </div>
   );
 }
