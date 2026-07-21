@@ -24,7 +24,9 @@ import {
 
 import { useGameStore, type MoveSpeedMode } from "./store/gameStore";
 
-useGLTF.preload("/assets/lobby/room_lobby.glb?v=20260721c");
+const LOBBY_GLB = "/assets/lobby/room_lobby_textured_walls.glb";
+
+useGLTF.preload(LOBBY_GLB);
 
 const MOVE_SPEED_SLOW = 1.75;
 const MOVE_SPEED_MEDIUM = 3.5;
@@ -363,7 +365,7 @@ function prepareRoomContent(source: Object3D) {
 }
 
 function LobbyRoom() {
-  const { scene } = useGLTF("/assets/lobby/room_lobby.glb?v=20260721c");
+  const { scene } = useGLTF(LOBBY_GLB);
   const setSpawnPoint = useGameStore((state) => state.setSpawnPoint);
   const setFloorSurfaceY = useGameStore((state) => state.setFloorSurfaceY);
 
