@@ -1,7 +1,7 @@
 import { useLoader } from "@react-three/fiber";
 import { DRACOLoader, GLTFLoader, MeshoptDecoder } from "three-stdlib";
 
-import { useLobbyLoadStore } from "./lobbyLoadStore";
+import { useLobbyLoadStore } from "../store/lobbyLoadStore";
 
 let dracoLoader: DRACOLoader | null = null;
 
