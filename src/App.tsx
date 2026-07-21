@@ -745,6 +745,19 @@ function LobbyLoader() {
   );
 }
 
+function formatLobbyLoadError(error: Error) {
+  const message = error.message || String(error);
+  // Git LFS pointer files start with "version https://git-lfs..." — loaders
+  // then fail while trying to parse that text as glTF JSON.
+  if (/version ht|git-lfs|not valid JSON/i.test(message)) {
+    return (
+      "This looks like a Git LFS pointer instead of the real GLB. " +
+      "Run `git lfs pull` in the repo, then hard-refresh the page (Ctrl+Shift+R)."
+    );
+  }
+  return message;
+}
+
 class SceneErrorBoundary extends Component<
   { children: React.ReactNode },
   { error: Error | null }
@@ -761,7 +774,9 @@ class SceneErrorBoundary extends Component<
         <Html center>
           <div className="max-w-md rounded border border-red-400/40 bg-black/85 px-4 py-3 text-center text-white">
             <p className="font-semibold">Lobby failed to load</p>
-            <p className="mt-2 text-sm text-white/70">{this.state.error.message}</p>
+            <p className="mt-2 text-sm text-white/70">
+              {formatLobbyLoadError(this.state.error)}
+            </p>
           </div>
         </Html>
       );
