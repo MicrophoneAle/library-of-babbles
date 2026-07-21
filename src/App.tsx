@@ -1,4 +1,4 @@
-import { Environment, PerspectiveCamera, useGLTF } from "@react-three/drei";
+import { Environment, Html, PerspectiveCamera, useGLTF, useProgress } from "@react-three/drei";
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import {
   CapsuleCollider,
@@ -9,7 +9,7 @@ import {
   useBeforePhysicsStep,
   useRapier,
 } from "@react-three/rapier";
-import { Suspense, useEffect, useMemo, useRef, useState } from "react";
+import { Suspense, Component, useEffect, useMemo, useRef, useState } from "react";
 import type { KinematicCharacterController } from "@dimforge/rapier3d-compat";
 import {
   Box3,
@@ -18,8 +18,10 @@ import {
   Mesh,
   Object3D,
   Quaternion,
+  Texture,
   Vector3,
   type BufferGeometry,
+  type Material,
 } from "three";
 
 import { useGameStore, type MoveSpeedMode } from "./store/gameStore";
@@ -126,19 +128,22 @@ function findStairsNode(root: Object3D) {
   return stairs;
 }
 
-function makeInvisibleColliderClone(source: Object3D) {
-  const clone = source.clone(true);
-  clone.traverse((child) => {
-    if ((child as Object3D & { isMesh?: boolean }).isMesh) {
-      child.visible = false;
+/** Geometry-only collider subtree — avoids duplicating 8K PBR textures. */
+function cloneColliderSubtree(source: Object3D): Group {
+  const group = new Group();
+  group.name = `${source.name || "mesh"}_collider`;
+  source.updateMatrixWorld(true);
+  source.traverse((child) => {
+    const mesh = child as Mesh;
+    if (mesh.isMesh) {
+      group.add(bakeMeshWorldGeometry(mesh));
     }
   });
-  return clone;
+  return group;
 }
 
-/** Clone a node and bake its world transform onto the clone, so it can be
- *  re-parented under an identity group (the static collider group). */
-function cloneWithWorldTransform(source: Object3D) {
+/** Visual-only clone for stairs extracted from the hidden Sketchfab hierarchy. */
+function cloneVisualWithWorldTransform(source: Object3D) {
   const position = new Vector3();
   const quaternion = new Quaternion();
   const scale = new Vector3();
@@ -152,9 +157,6 @@ function cloneWithWorldTransform(source: Object3D) {
   return clone;
 }
 
-/** Force every mesh material to render fully opaque (no alpha blending,
- *  depth-write on, both faces drawn) so thin geometry like column bases
- *  can't appear see-through. */
 function forceOpaqueMaterials(root: Object3D) {
   root.traverse((child) => {
     const mesh = child as Mesh;
@@ -174,6 +176,69 @@ function forceOpaqueMaterials(root: Object3D) {
     }
   });
 }
+
+const TEXTURE_KEYS = [
+  "map",
+  "normalMap",
+  "roughnessMap",
+  "metalnessMap",
+  "aoMap",
+  "emissiveMap",
+] as const;
+
+/** Shrink embedded 8K maps so the textured lobby fits in GPU memory. */
+function downscaleLargeTextures(root: Object3D, maxSize: number) {
+  const seen = new Set<Texture>();
+  root.traverse((child) => {
+    const mesh = child as Mesh;
+    if (!mesh.isMesh) {
+      return;
+    }
+    const materials = Array.isArray(mesh.material)
+      ? mesh.material
+      : [mesh.material];
+    for (const material of materials) {
+      if (!material) {
+        continue;
+      }
+      for (const key of TEXTURE_KEYS) {
+        const texture = material[key as keyof Material] as Texture | undefined;
+        if (!texture || seen.has(texture) || !texture.image) {
+          continue;
+        }
+        seen.add(texture);
+        const image = texture.image as { width?: number; height?: number };
+        const width = image.width ?? 0;
+        const height = image.height ?? 0;
+        if (width <= maxSize && height <= maxSize) {
+          continue;
+        }
+        const scale = maxSize / Math.max(width, height);
+        const canvas = document.createElement("canvas");
+        canvas.width = Math.max(1, Math.round(width * scale));
+        canvas.height = Math.max(1, Math.round(height * scale));
+        const context = canvas.getContext("2d");
+        if (!context) {
+          continue;
+        }
+        context.drawImage(image as CanvasImageSource, 0, 0, canvas.width, canvas.height);
+        texture.image = canvas;
+        texture.needsUpdate = true;
+      }
+    }
+  });
+}
+
+type PreparedRoom = {
+  room: Object3D;
+  staticColliders: Group;
+  floorBounds: Box3;
+  baseboardBoxes: CuboidBox[];
+  lecternBoxes: CuboidBox[];
+  lecternColliders: Group;
+};
+
+const preparedRooms = new WeakMap<Object3D, PreparedRoom>();
 
 type CuboidBox = {
   args: [number, number, number];
@@ -240,53 +305,53 @@ function bakeMeshWorldGeometry(mesh: Mesh): Mesh {
   return baked;
 }
 
-function prepareRoomContent(source: Object3D) {
-  const room = source.clone(true);
-  room.updateMatrixWorld(true);
-  forceOpaqueMaterials(room);
+function prepareRoomContent(source: Object3D): PreparedRoom {
+  const cached = preparedRooms.get(source);
+  if (cached) {
+    return cached;
+  }
+
+  source.updateMatrixWorld(true);
+  downscaleLargeTextures(source, 2048);
+  forceOpaqueMaterials(source);
 
   const staticColliders = new Group();
 
-  const sketchfab = room.getObjectByName("Sketchfab_model");
-  const stairsSource = sketchfab ? findStairsNode(sketchfab) : findStairsNode(room);
+  const sketchfab = source.getObjectByName("Sketchfab_model");
+  if (sketchfab) {
+    sketchfab.visible = false;
+  }
 
+  const stairsSource = sketchfab ? findStairsNode(sketchfab) : findStairsNode(source);
   if (stairsSource) {
-    const stairs = cloneWithWorldTransform(stairsSource);
-    room.add(stairs);
-    staticColliders.add(makeInvisibleColliderClone(stairs));
+    if (!source.getObjectByName("Lobby_Stairs_Visual")) {
+      const stairs = cloneVisualWithWorldTransform(stairsSource);
+      stairs.name = "Lobby_Stairs_Visual";
+      source.add(stairs);
+    }
+    staticColliders.add(cloneColliderSubtree(stairsSource));
   }
 
-  const elevatedFloor = room.getObjectByName("Lobby_Elevated_Floor");
+  const elevatedFloor = source.getObjectByName("Lobby_Elevated_Floor");
   if (elevatedFloor) {
-    staticColliders.add(
-      makeInvisibleColliderClone(cloneWithWorldTransform(elevatedFloor)),
-    );
+    staticColliders.add(cloneColliderSubtree(elevatedFloor));
   }
 
-  const wallsMesh = room.getObjectByName("Lobby_Floor_Walls");
+  const wallsMesh = source.getObjectByName("Lobby_Floor_Walls");
   if (wallsMesh) {
-    staticColliders.add(
-      makeInvisibleColliderClone(cloneWithWorldTransform(wallsMesh)),
-    );
+    staticColliders.add(cloneColliderSubtree(wallsMesh));
   }
 
-  const columnSources: Object3D[] = [];
-  room.traverse((object) => {
+  source.traverse((object) => {
     if (
       object.name.includes("Column") ||
       object.name.startsWith("Cylinder")
     ) {
-      columnSources.push(object);
+      staticColliders.add(cloneColliderSubtree(object));
     }
   });
-  for (const column of columnSources) {
-    staticColliders.add(
-      makeInvisibleColliderClone(cloneWithWorldTransform(column)),
-    );
-  }
 
-  // Baseboard trimesh (actual trim shape along the walls).
-  room.traverse((object) => {
+  source.traverse((object) => {
     const mesh = object as Mesh;
     if (!mesh.isMesh) {
       return;
@@ -296,18 +361,13 @@ function prepareRoomContent(source: Object3D) {
       mesh.name.startsWith("Vert") ||
       /baseboard|trim|plinth/i.test(mesh.name)
     ) {
-      staticColliders.add(
-        makeInvisibleColliderClone(cloneWithWorldTransform(mesh)),
-      );
+      staticColliders.add(cloneColliderSubtree(mesh));
     }
   });
 
-  // Lectern: empty lectern_HP* stubs; visible mesh under Sketchfab_model.001.
-  // Nested Sketchfab scales break TRS baking, so we bake geometry into world
-  // space and also keep a padded cuboid as a solid fallback.
   const lecternRoot =
-    room.getObjectByName("Sketchfab_model.001") ??
-    room.getObjectByName("lectern_HP");
+    source.getObjectByName("Sketchfab_model.001") ??
+    source.getObjectByName("lectern_HP");
   const lecternColliders = new Group();
   lecternColliders.name = "LecternColliders";
   const lecternBoxes: CuboidBox[] = [];
@@ -316,10 +376,9 @@ function prepareRoomContent(source: Object3D) {
     lecternRoot.updateWorldMatrix(true, true);
     lecternRoot.traverse((object) => {
       const mesh = object as Mesh;
-      if (!mesh.isMesh) {
-        return;
+      if (mesh.isMesh) {
+        lecternColliders.add(bakeMeshWorldGeometry(mesh));
       }
-      lecternColliders.add(bakeMeshWorldGeometry(mesh));
     });
 
     const box = boxFromObject(lecternRoot, 0.45);
@@ -335,7 +394,6 @@ function prepareRoomContent(source: Object3D) {
     }
   }
 
-  // Absolute fallback if hierarchy lookup fails but we know the prop is near spawn.
   if (lecternBoxes.length === 0 && lecternColliders.children.length === 0) {
     lecternBoxes.push({
       args: [0.5, 0.85, 0.5],
@@ -343,25 +401,23 @@ function prepareRoomContent(source: Object3D) {
     });
   }
 
-  sketchfab?.parent?.remove(sketchfab);
-
-  room.updateMatrixWorld(true);
-
-  const floorMesh = room.getObjectByName("Lobby_Floor_Walls");
+  const floorMesh = source.getObjectByName("Lobby_Floor_Walls");
   const floorBounds = floorMesh
     ? new Box3().setFromObject(floorMesh)
-    : new Box3().setFromObject(room);
+    : new Box3().setFromObject(source);
 
   const baseboardBoxes = buildPerimeterBaseboardBoxes(floorBounds);
 
-  return {
-    room,
+  const prepared: PreparedRoom = {
+    room: source,
     staticColliders,
     floorBounds,
     baseboardBoxes,
     lecternBoxes,
     lecternColliders,
   };
+  preparedRooms.set(source, prepared);
+  return prepared;
 }
 
 function LobbyRoom() {
@@ -678,6 +734,42 @@ function Player() {
   );
 }
 
+function LobbyLoader() {
+  const { progress } = useProgress();
+  return (
+    <Html center>
+      <div className="rounded border border-white/35 bg-black/70 px-4 py-2 text-sm text-white/90">
+        Loading lobby… {progress.toFixed(0)}%
+      </div>
+    </Html>
+  );
+}
+
+class SceneErrorBoundary extends Component<
+  { children: React.ReactNode },
+  { error: Error | null }
+> {
+  state = { error: null as Error | null };
+
+  static getDerivedStateFromError(error: Error) {
+    return { error };
+  }
+
+  render() {
+    if (this.state.error) {
+      return (
+        <Html center>
+          <div className="max-w-md rounded border border-red-400/40 bg-black/85 px-4 py-3 text-center text-white">
+            <p className="font-semibold">Lobby failed to load</p>
+            <p className="mt-2 text-sm text-white/70">{this.state.error.message}</p>
+          </div>
+        </Html>
+      );
+    }
+    return this.props.children;
+  }
+}
+
 function Scene() {
   return (
     <>
@@ -685,9 +777,11 @@ function Scene() {
       <ambientLight intensity={0.5} />
       <directionalLight position={[5, 10, 5]} intensity={1} />
       <Environment preset="apartment" />
-      <Suspense fallback={null}>
-        <LobbyRoom />
-      </Suspense>
+      <SceneErrorBoundary>
+        <Suspense fallback={<LobbyLoader />}>
+          <LobbyRoom />
+        </Suspense>
+      </SceneErrorBoundary>
       <Player />
     </>
   );
