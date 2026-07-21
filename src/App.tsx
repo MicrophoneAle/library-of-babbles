@@ -23,7 +23,7 @@ import {
 
 import { useGameStore, type MoveSpeedMode } from "./store/gameStore";
 
-useGLTF.preload("/assets/lobby/room_lobby.glb");
+useGLTF.preload("/assets/lobby/room_lobby.glb?v=20260721b");
 
 const MOVE_SPEED_SLOW = 1.75;
 const MOVE_SPEED_MEDIUM = 3.5;
@@ -172,12 +172,59 @@ function forceOpaqueMaterials(root: Object3D) {
   });
 }
 
+type CuboidBox = {
+  args: [number, number, number];
+  position: [number, number, number];
+};
+
+/** Solid frame of cuboids along the four walls. The Ground_Baseboards mesh AABB
+ *  spans the entire floor, so a single box from it is useless for wall trim. */
+function buildPerimeterBaseboardBoxes(
+  floorBounds: Box3,
+  height = 0.55,
+  thickness = 0.45,
+): CuboidBox[] {
+  const min = floorBounds.min;
+  const max = floorBounds.max;
+  const cx = (min.x + max.x) * 0.5;
+  const cz = (min.z + max.z) * 0.5;
+  const cy = min.y + height * 0.5;
+  const hx = Math.max((max.x - min.x) * 0.5, thickness);
+  const hz = Math.max((max.z - min.z) * 0.5, thickness);
+  const halfH = height * 0.5;
+  const halfT = thickness * 0.5;
+
+  return [
+    { args: [hx, halfH, halfT], position: [cx, cy, min.z + halfT] },
+    { args: [hx, halfH, halfT], position: [cx, cy, max.z - halfT] },
+    { args: [halfT, halfH, hz], position: [min.x + halfT, cy, cz] },
+    { args: [halfT, halfH, hz], position: [max.x - halfT, cy, cz] },
+  ];
+}
+
+function boxFromObject(object: Object3D, minHalf = 0.25): CuboidBox | null {
+  object.updateWorldMatrix(true, true);
+  const box = new Box3().setFromObject(object);
+  if (box.isEmpty()) {
+    return null;
+  }
+  const size = box.getSize(new Vector3());
+  const center = box.getCenter(new Vector3());
+  return {
+    args: [
+      Math.max(size.x * 0.5, minHalf),
+      Math.max(size.y * 0.5, minHalf),
+      Math.max(size.z * 0.5, minHalf),
+    ],
+    position: [center.x, center.y, center.z],
+  };
+}
+
 function prepareRoomContent(source: Object3D) {
   const room = source.clone(true);
   room.updateMatrixWorld(true);
   forceOpaqueMaterials(room);
 
-  // Invisible mesh clones for trimesh colliders (stairs + elevated floor).
   const staticColliders = new Group();
 
   const sketchfab = room.getObjectByName("Sketchfab_model");
@@ -191,11 +238,11 @@ function prepareRoomContent(source: Object3D) {
 
   const elevatedFloor = room.getObjectByName("Lobby_Elevated_Floor");
   if (elevatedFloor) {
-    staticColliders.add(makeInvisibleColliderClone(elevatedFloor));
+    staticColliders.add(
+      makeInvisibleColliderClone(cloneWithWorldTransform(elevatedFloor)),
+    );
   }
 
-  // Walls + ceiling: the floor/walls shell gets a full trimesh collider so the
-  // player can't leave the room. (Floor grounding still uses the cuboid.)
   const wallsMesh = room.getObjectByName("Lobby_Floor_Walls");
   if (wallsMesh) {
     staticColliders.add(
@@ -203,8 +250,6 @@ function prepareRoomContent(source: Object3D) {
     );
   }
 
-  // Columns — collect first, then clone, so we don't mutate the hierarchy
-  // mid-traversal. Matches Tall_Column_*, Upper_Short_Column_*, Cylinder.*, etc.
   const columnSources: Object3D[] = [];
   room.traverse((object) => {
     if (
@@ -220,78 +265,39 @@ function prepareRoomContent(source: Object3D) {
     );
   }
 
-  // Baseboards / wall trim (Ground_Baseboards, Vert.*, etc.).
-  // Thin trimeshes are easy to tunnel through, so we build thickened cuboids
-  // from each baseboard mesh's world AABB instead.
-  const baseboardBoxes: Array<{
-    args: [number, number, number];
-    position: [number, number, number];
-  }> = [];
-  const minBaseboardThickness = 0.25;
+  // Baseboard trimesh (actual trim shape along the walls).
   room.traverse((object) => {
     const mesh = object as Mesh;
     if (!mesh.isMesh) {
       return;
     }
     if (
-      !(
-        mesh.name === "Vert" ||
-        mesh.name.startsWith("Vert") ||
-        /baseboard|trim|plinth/i.test(mesh.name)
-      )
+      mesh.name === "Vert" ||
+      mesh.name.startsWith("Vert") ||
+      /baseboard|trim|plinth/i.test(mesh.name)
     ) {
-      return;
+      staticColliders.add(
+        makeInvisibleColliderClone(cloneWithWorldTransform(mesh)),
+      );
     }
-    const box = new Box3().setFromObject(mesh);
-    if (box.isEmpty()) {
-      return;
-    }
-    const size = box.getSize(new Vector3());
-    const center = box.getCenter(new Vector3());
-    baseboardBoxes.push({
-      args: [
-        Math.max(size.x * 0.5, minBaseboardThickness * 0.5),
-        Math.max(size.y * 0.5, 0.05),
-        Math.max(size.z * 0.5, minBaseboardThickness * 0.5),
-      ],
-      position: [center.x, center.y, center.z],
-    });
   });
 
-  // Lectern — Blender import leaves empty lectern_HP* stubs; the visible mesh
-  // lives under Sketchfab_model.001. Use a cuboid from the prop's world AABB.
-  const lecternBoxes: Array<{
-    args: [number, number, number];
-    position: [number, number, number];
-  }> = [];
+  // Lectern: empty lectern_HP* stubs; visible mesh under Sketchfab_model.001.
   const lecternRoot =
     room.getObjectByName("Sketchfab_model.001") ??
-    room.getObjectByName("lectern_HP") ??
-    (() => {
-      let found: Object3D | null = null;
-      room.traverse((object) => {
-        if (!found && /lectern/i.test(object.name)) {
-          found = object;
-        }
-      });
-      return found;
-    })();
+    room.getObjectByName("lectern_HP");
+  const lecternMeshes: Object3D[] = [];
   if (lecternRoot) {
-    lecternRoot.updateWorldMatrix(true, true);
-    const box = new Box3().setFromObject(lecternRoot);
-    if (!box.isEmpty()) {
-      const size = box.getSize(new Vector3());
-      const center = box.getCenter(new Vector3());
-      // Pad slightly so the capsule can't squeeze through thin edges.
-      lecternBoxes.push({
-        args: [
-          Math.max(size.x * 0.5, 0.2),
-          Math.max(size.y * 0.5, 0.2),
-          Math.max(size.z * 0.5, 0.2),
-        ],
-        position: [center.x, center.y, center.z],
-      });
-    }
+    lecternRoot.traverse((object) => {
+      if ((object as Mesh).isMesh) {
+        lecternMeshes.push(object);
+      }
+    });
+  }
+  for (const mesh of lecternMeshes) {
+    staticColliders.add(
+      makeInvisibleColliderClone(cloneWithWorldTransform(mesh)),
+    );
   }
 
   sketchfab?.parent?.remove(sketchfab);
@@ -303,6 +309,25 @@ function prepareRoomContent(source: Object3D) {
     ? new Box3().setFromObject(floorMesh)
     : new Box3().setFromObject(room);
 
+  // Perimeter cuboids so thin baseboard geometry can't be tunneled.
+  const baseboardBoxes = buildPerimeterBaseboardBoxes(floorBounds);
+
+  // Padded lectern cuboid on top of the trimesh.
+  const lecternBoxes: CuboidBox[] = [];
+  if (lecternRoot) {
+    const box = boxFromObject(lecternRoot, 0.4);
+    if (box) {
+      lecternBoxes.push({
+        args: [
+          Math.max(box.args[0], 0.45),
+          Math.max(box.args[1], 0.8),
+          Math.max(box.args[2], 0.45),
+        ],
+        position: box.position,
+      });
+    }
+  }
+
   return {
     room,
     staticColliders,
@@ -313,7 +338,7 @@ function prepareRoomContent(source: Object3D) {
 }
 
 function LobbyRoom() {
-  const { scene } = useGLTF("/assets/lobby/room_lobby.glb");
+  const { scene } = useGLTF("/assets/lobby/room_lobby.glb?v=20260721b");
   const setSpawnPoint = useGameStore((state) => state.setSpawnPoint);
   const setFloorSurfaceY = useGameStore((state) => state.setFloorSurfaceY);
 
