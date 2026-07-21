@@ -220,8 +220,7 @@ function prepareRoomContent(source: Object3D) {
     );
   }
 
-  // Baseboards / wall trim (exported as Vert / Vert.* in the lobby GLB).
-  // Empty Blender leftovers (Vert.001 etc. with no mesh) are skipped.
+  // Baseboards / wall trim (Ground_Baseboards, Vert.*, etc.).
   // Thin trimeshes are easy to tunnel through, so we build thickened cuboids
   // from each baseboard mesh's world AABB instead.
   const baseboardBoxes: Array<{
@@ -259,6 +258,42 @@ function prepareRoomContent(source: Object3D) {
     });
   });
 
+  // Lectern — Blender import leaves empty lectern_HP* stubs; the visible mesh
+  // lives under Sketchfab_model.001. Use a cuboid from the prop's world AABB.
+  const lecternBoxes: Array<{
+    args: [number, number, number];
+    position: [number, number, number];
+  }> = [];
+  const lecternRoot =
+    room.getObjectByName("Sketchfab_model.001") ??
+    room.getObjectByName("lectern_HP") ??
+    (() => {
+      let found: Object3D | null = null;
+      room.traverse((object) => {
+        if (!found && /lectern/i.test(object.name)) {
+          found = object;
+        }
+      });
+      return found;
+    })();
+  if (lecternRoot) {
+    lecternRoot.updateWorldMatrix(true, true);
+    const box = new Box3().setFromObject(lecternRoot);
+    if (!box.isEmpty()) {
+      const size = box.getSize(new Vector3());
+      const center = box.getCenter(new Vector3());
+      // Pad slightly so the capsule can't squeeze through thin edges.
+      lecternBoxes.push({
+        args: [
+          Math.max(size.x * 0.5, 0.2),
+          Math.max(size.y * 0.5, 0.2),
+          Math.max(size.z * 0.5, 0.2),
+        ],
+        position: [center.x, center.y, center.z],
+      });
+    }
+  }
+
   sketchfab?.parent?.remove(sketchfab);
 
   room.updateMatrixWorld(true);
@@ -273,6 +308,7 @@ function prepareRoomContent(source: Object3D) {
     staticColliders,
     floorBounds,
     baseboardBoxes,
+    lecternBoxes,
   };
 }
 
@@ -306,6 +342,7 @@ function LobbyRoom() {
       room: prepared.room,
       staticColliders: prepared.staticColliders,
       baseboardBoxes: prepared.baseboardBoxes,
+      lecternBoxes: prepared.lecternBoxes,
       center,
       floorSize,
       floorSurfaceY,
@@ -338,6 +375,13 @@ function LobbyRoom() {
         {layout.baseboardBoxes.map((box, index) => (
           <CuboidCollider
             key={`baseboard-${index}`}
+            args={box.args}
+            position={box.position}
+          />
+        ))}
+        {layout.lecternBoxes.map((box, index) => (
+          <CuboidCollider
+            key={`lectern-${index}`}
             args={box.args}
             position={box.position}
           />
