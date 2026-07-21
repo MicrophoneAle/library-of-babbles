@@ -419,7 +419,7 @@ function prepareRoomContent(source: Object3D): PreparedRoom {
     lecternBoxes.length > 0
       ? new Vector3(
           lecternBoxes[0].position[0],
-          lecternBoxes[0].position[1] + lecternBoxes[0].args[1] * 0.35,
+          lecternBoxes[0].position[1] + lecternBoxes[0].args[1] + 0.2,
           lecternBoxes[0].position[2],
         )
       : null;

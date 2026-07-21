@@ -92,22 +92,19 @@ export function LecternInteractionUI() {
     <>
       {lecternPrompt.visible && !lecternPopupOpen ? (
         <div
-          className="pointer-events-none absolute z-30 -translate-x-1/2 -translate-y-1/2"
+          className="pointer-events-none absolute z-30"
           style={{
             left: lecternPrompt.screenX,
             top: lecternPrompt.screenY,
+            transform: "translate(-50%, calc(-100% - 10px))",
           }}
         >
-          <motion.div
-            animate={{ y: [0, -3, 0] }}
-            transition={{ duration: 1.6, repeat: Infinity, ease: "easeInOut" }}
-            className="flex items-center gap-2 rounded border border-white/40 bg-black/75 px-3 py-1.5 shadow-lg backdrop-blur-sm"
-          >
-            <motion.div className="flex h-8 w-8 items-center justify-center rounded border border-white/35 bg-black/50 text-sm font-semibold text-white">
+          <div className="flex items-center gap-2 rounded border border-amber-100/80 bg-amber-50/95 px-3 py-1.5 shadow-md">
+            <div className="flex h-8 w-8 items-center justify-center rounded border border-amber-200/90 bg-white/90 text-sm font-semibold text-stone-700">
               F
-            </motion.div>
-            <span className="text-sm font-medium text-white/90">Interact</span>
-          </motion.div>
+            </div>
+            <span className="text-sm font-medium text-stone-700">Interact</span>
+          </div>
         </div>
       ) : null}
 
