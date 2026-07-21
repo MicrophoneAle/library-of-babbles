@@ -27,6 +27,10 @@ import {
 import { useGameStore, type MoveSpeedMode } from "./store/gameStore";
 import { useLobbyGLTF } from "./hooks/useLobbyGLTF";
 import { useLobbyLoadStore } from "./store/lobbyLoadStore";
+import {
+  LecternInteractionUI,
+  LecternInteractTracker,
+} from "./components/lobby/LecternInteraction";
 
 const LOBBY_GLB = "/assets/lobby/room_lobby_textured_walls.glb";
 
@@ -238,6 +242,7 @@ type PreparedRoom = {
   baseboardBoxes: CuboidBox[];
   lecternBoxes: CuboidBox[];
   lecternColliders: Group;
+  lecternInteractPoint: Vector3 | null;
 };
 
 const preparedRooms = new WeakMap<Object3D, PreparedRoom>();
@@ -410,6 +415,15 @@ function prepareRoomContent(source: Object3D): PreparedRoom {
 
   const baseboardBoxes = buildPerimeterBaseboardBoxes(floorBounds);
 
+  const lecternInteractPoint =
+    lecternBoxes.length > 0
+      ? new Vector3(
+          lecternBoxes[0].position[0],
+          lecternBoxes[0].position[1] + lecternBoxes[0].args[1] * 0.35,
+          lecternBoxes[0].position[2],
+        )
+      : null;
+
   const prepared: PreparedRoom = {
     room: source,
     staticColliders,
@@ -417,6 +431,7 @@ function prepareRoomContent(source: Object3D): PreparedRoom {
     baseboardBoxes,
     lecternBoxes,
     lecternColliders,
+    lecternInteractPoint,
   };
   preparedRooms.set(source, prepared);
   return prepared;
@@ -427,6 +442,9 @@ function LobbyRoom() {
   const scene = gltf.scene;
   const setSpawnPoint = useGameStore((state) => state.setSpawnPoint);
   const setFloorSurfaceY = useGameStore((state) => state.setFloorSurfaceY);
+  const setLecternInteractPoint = useGameStore(
+    (state) => state.setLecternInteractPoint,
+  );
 
   useEffect(() => {
     void useLobbyLoadStore.getState().finish();
@@ -459,6 +477,7 @@ function LobbyRoom() {
       baseboardBoxes: prepared.baseboardBoxes,
       lecternBoxes: prepared.lecternBoxes,
       lecternColliders: prepared.lecternColliders,
+      lecternInteractPoint: prepared.lecternInteractPoint,
       center,
       floorSize,
       floorSurfaceY,
@@ -470,7 +489,16 @@ function LobbyRoom() {
   useEffect(() => {
     setFloorSurfaceY(layout.floorSurfaceY);
     setSpawnPoint(layout.spawnPoint, layout.spawnYaw);
-  }, [layout.floorSurfaceY, layout.spawnPoint, layout.spawnYaw, setFloorSurfaceY, setSpawnPoint]);
+    setLecternInteractPoint(layout.lecternInteractPoint);
+  }, [
+    layout.floorSurfaceY,
+    layout.spawnPoint,
+    layout.spawnYaw,
+    layout.lecternInteractPoint,
+    setFloorSurfaceY,
+    setSpawnPoint,
+    setLecternInteractPoint,
+  ]);
 
   return (
     <>
@@ -811,6 +839,7 @@ function Scene() {
           <LobbyRoom />
         </Suspense>
       </SceneErrorBoundary>
+      <LecternInteractTracker />
       <Player />
     </>
   );
@@ -1004,6 +1033,7 @@ export default function App() {
         <MovementKeys />
       </div>
       <LobbyLoadingOverlay />
+      <LecternInteractionUI />
     </div>
   );
 }
