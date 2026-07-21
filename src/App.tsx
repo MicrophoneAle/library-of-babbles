@@ -1,4 +1,4 @@
-import { Environment, Html, PerspectiveCamera, useGLTF, useProgress } from "@react-three/drei";
+import { Environment, Html, PerspectiveCamera, useGLTF } from "@react-three/drei";
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import {
   CapsuleCollider,
@@ -25,10 +25,13 @@ import {
 } from "three";
 
 import { useGameStore, type MoveSpeedMode } from "./store/gameStore";
+import {
+  createLobbyLoaderExtension,
+  useLobbyLoadStore,
+} from "./store/lobbyLoadStore";
 
 const LOBBY_GLB = "/assets/lobby/room_lobby_textured_walls.glb";
-
-useGLTF.preload(LOBBY_GLB);
+const lobbyLoaderExtension = createLobbyLoaderExtension();
 
 const MOVE_SPEED_SLOW = 1.75;
 const MOVE_SPEED_MEDIUM = 3.5;
@@ -421,7 +424,7 @@ function prepareRoomContent(source: Object3D): PreparedRoom {
 }
 
 function LobbyRoom() {
-  const { scene } = useGLTF(LOBBY_GLB);
+  const { scene } = useGLTF(LOBBY_GLB, true, true, lobbyLoaderExtension);
   const setSpawnPoint = useGameStore((state) => state.setSpawnPoint);
   const setFloorSurfaceY = useGameStore((state) => state.setFloorSurfaceY);
 
@@ -519,6 +522,7 @@ function LobbyRoom() {
       >
         <primitive object={layout.staticColliders} />
       </RigidBody>
+      <Environment preset="apartment" />
     </>
   );
 }
@@ -735,11 +739,16 @@ function Player() {
 }
 
 function LobbyLoader() {
-  const { progress } = useProgress();
+  const progress = useLobbyLoadStore((state) => state.progress);
+
+  useEffect(() => {
+    useLobbyLoadStore.getState().reset();
+  }, []);
+
   return (
     <Html center>
-      <div className="rounded border border-white/35 bg-black/70 px-4 py-2 text-sm text-white/90">
-        Loading lobby… {progress.toFixed(0)}%
+      <div className="min-w-[11rem] whitespace-nowrap rounded border border-white/35 bg-black/70 px-4 py-2 text-center text-sm text-white/90">
+        Loading lobby… {Math.round(progress)}%
       </div>
     </Html>
   );
@@ -791,7 +800,6 @@ function Scene() {
       <PerspectiveCamera makeDefault fov={75} near={0.1} far={1000} />
       <ambientLight intensity={0.5} />
       <directionalLight position={[5, 10, 5]} intensity={1} />
-      <Environment preset="apartment" />
       <SceneErrorBoundary>
         <Suspense fallback={<LobbyLoader />}>
           <LobbyRoom />
