@@ -220,6 +220,23 @@ function prepareRoomContent(source: Object3D) {
     );
   }
 
+  // Baseboards / wall trim (exported as "Vert" in the current lobby GLB).
+  const baseboardSources: Object3D[] = [];
+  room.traverse((object) => {
+    if (
+      object.name === "Vert" ||
+      object.name.startsWith("Vert.") ||
+      /baseboard|Baseboard|trim|Trim|plinth|Plinth/i.test(object.name)
+    ) {
+      baseboardSources.push(object);
+    }
+  });
+  for (const baseboard of baseboardSources) {
+    staticColliders.add(
+      makeInvisibleColliderClone(cloneWithWorldTransform(baseboard)),
+    );
+  }
+
   sketchfab?.parent?.remove(sketchfab);
 
   room.updateMatrixWorld(true);
