@@ -12,17 +12,13 @@ interface GameState {
   floorSurfaceY: number;
   moveSpeedMode: MoveSpeedMode;
   lecternInteractPoint: Vector3 | null;
-  lecternPrompt: {
-    visible: boolean;
-    screenX: number;
-    screenY: number;
-  };
+  lecternPromptVisible: boolean;
   lecternPopupOpen: boolean;
   setSpawnPoint: (point: Vector3, yaw?: number) => void;
   setFloorSurfaceY: (y: number) => void;
   setMoveSpeedMode: (mode: MoveSpeedMode) => void;
   setLecternInteractPoint: (point: Vector3 | null) => void;
-  setLecternPrompt: (prompt: GameState["lecternPrompt"]) => void;
+  setLecternPromptVisible: (visible: boolean) => void;
   openLecternPopup: () => void;
   closeLecternPopup: () => void;
   /** C → one step slower. V → one step faster. */
@@ -36,7 +32,7 @@ export const useGameStore = create<GameState>((set, get) => ({
   floorSurfaceY: 0,
   moveSpeedMode: "medium",
   lecternInteractPoint: null,
-  lecternPrompt: { visible: false, screenX: 0, screenY: 0 },
+  lecternPromptVisible: false,
   lecternPopupOpen: false,
   setSpawnPoint: (point, yaw = 0) =>
     set({ spawnPoint: point.clone(), spawnYaw: yaw }),
@@ -44,21 +40,15 @@ export const useGameStore = create<GameState>((set, get) => ({
   setMoveSpeedMode: (mode) => set({ moveSpeedMode: mode }),
   setLecternInteractPoint: (point) =>
     set({ lecternInteractPoint: point ? point.clone() : null }),
-  setLecternPrompt: (prompt) =>
-    set((state) => {
-      const prev = state.lecternPrompt;
-      if (
-        prev.visible === prompt.visible &&
-        Math.abs(prev.screenX - prompt.screenX) < 0.5 &&
-        Math.abs(prev.screenY - prompt.screenY) < 0.5
-      ) {
-        return state;
-      }
-      return { lecternPrompt: prompt };
-    }),
+  setLecternPromptVisible: (visible) =>
+    set((state) =>
+      state.lecternPromptVisible === visible
+        ? state
+        : { lecternPromptVisible: visible },
+    ),
   openLecternPopup: () => {
     document.exitPointerLock();
-    set({ lecternPopupOpen: true, lecternPrompt: { visible: false, screenX: 0, screenY: 0 } });
+    set({ lecternPopupOpen: true, lecternPromptVisible: false });
   },
   closeLecternPopup: () => set({ lecternPopupOpen: false }),
   adjustMoveSpeed: (direction) => {
