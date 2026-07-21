@@ -220,22 +220,44 @@ function prepareRoomContent(source: Object3D) {
     );
   }
 
-  // Baseboards / wall trim (exported as "Vert" in the current lobby GLB).
-  const baseboardSources: Object3D[] = [];
+  // Baseboards / wall trim (exported as Vert / Vert.* in the lobby GLB).
+  // Empty Blender leftovers (Vert.001 etc. with no mesh) are skipped.
+  // Thin trimeshes are easy to tunnel through, so we build thickened cuboids
+  // from each baseboard mesh's world AABB instead.
+  const baseboardBoxes: Array<{
+    args: [number, number, number];
+    position: [number, number, number];
+  }> = [];
+  const minBaseboardThickness = 0.25;
   room.traverse((object) => {
-    if (
-      object.name === "Vert" ||
-      object.name.startsWith("Vert.") ||
-      /baseboard|Baseboard|trim|Trim|plinth|Plinth/i.test(object.name)
-    ) {
-      baseboardSources.push(object);
+    const mesh = object as Mesh;
+    if (!mesh.isMesh) {
+      return;
     }
+    if (
+      !(
+        mesh.name === "Vert" ||
+        mesh.name.startsWith("Vert") ||
+        /baseboard|trim|plinth/i.test(mesh.name)
+      )
+    ) {
+      return;
+    }
+    const box = new Box3().setFromObject(mesh);
+    if (box.isEmpty()) {
+      return;
+    }
+    const size = box.getSize(new Vector3());
+    const center = box.getCenter(new Vector3());
+    baseboardBoxes.push({
+      args: [
+        Math.max(size.x * 0.5, minBaseboardThickness * 0.5),
+        Math.max(size.y * 0.5, 0.05),
+        Math.max(size.z * 0.5, minBaseboardThickness * 0.5),
+      ],
+      position: [center.x, center.y, center.z],
+    });
   });
-  for (const baseboard of baseboardSources) {
-    staticColliders.add(
-      makeInvisibleColliderClone(cloneWithWorldTransform(baseboard)),
-    );
-  }
 
   sketchfab?.parent?.remove(sketchfab);
 
@@ -250,6 +272,7 @@ function prepareRoomContent(source: Object3D) {
     room,
     staticColliders,
     floorBounds,
+    baseboardBoxes,
   };
 }
 
@@ -282,6 +305,7 @@ function LobbyRoom() {
     return {
       room: prepared.room,
       staticColliders: prepared.staticColliders,
+      baseboardBoxes: prepared.baseboardBoxes,
       center,
       floorSize,
       floorSurfaceY,
@@ -311,6 +335,13 @@ function LobbyRoom() {
             layout.center.z,
           ]}
         />
+        {layout.baseboardBoxes.map((box, index) => (
+          <CuboidCollider
+            key={`baseboard-${index}`}
+            args={box.args}
+            position={box.position}
+          />
+        ))}
       </RigidBody>
       {/* includeInvisible is required: the collider clones' meshes are
           visible=false, and rapier skips invisible meshes by default. */}
