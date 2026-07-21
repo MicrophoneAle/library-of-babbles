@@ -56,6 +56,8 @@ const CAPSULE_HALF_HEIGHT = 0.5;
 const CAPSULE_RADIUS = 0.2;
 const CAPSULE_BOTTOM_OFFSET = CAPSULE_HALF_HEIGHT + CAPSULE_RADIUS;
 const LOOK_SENSITIVITY = 0.002;
+// Vertical FOV in degrees — lower values reduce edge stretching (75° feels lens-like).
+const CAMERA_FOV = 55;
 
 function useKeyboard() {
   const keys = useRef({
@@ -797,7 +799,7 @@ class SceneErrorBoundary extends Component<
 function Scene() {
   return (
     <>
-      <PerspectiveCamera makeDefault fov={75} near={0.1} far={1000} />
+      <PerspectiveCamera makeDefault fov={CAMERA_FOV} near={0.1} far={1000} />
       <ambientLight intensity={0.5} />
       <directionalLight position={[5, 10, 5]} intensity={1} />
       <SceneErrorBoundary>
