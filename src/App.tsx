@@ -379,6 +379,7 @@ function prepareRoomContent(source: Object3D): PreparedRoom {
   const lecternColliders = new Group();
   lecternColliders.name = "LecternColliders";
   const lecternBoxes: CuboidBox[] = [];
+  let lecternInteractPoint: Vector3 | null = null;
 
   if (lecternRoot) {
     lecternRoot.updateWorldMatrix(true, true);
@@ -390,23 +391,42 @@ function prepareRoomContent(source: Object3D): PreparedRoom {
     });
 
     const box = boxFromObject(lecternRoot, 0.45);
-    if (box) {
+    const lecternBounds = new Box3().setFromObject(lecternRoot);
+    if (box && !lecternBounds.isEmpty()) {
+      const center = lecternBounds.getCenter(new Vector3());
+      const lecternHeight = lecternBounds.max.y - lecternBounds.min.y;
+      const lecternHalfHeight = Math.min(
+        Math.max(lecternHeight * 0.22, 0.32),
+        0.42,
+      );
+
       lecternBoxes.push({
         args: [
-          Math.max(box.args[0], 0.5),
-          Math.max(box.args[1], 0.85),
-          Math.max(box.args[2], 0.5),
+          Math.max(box.args[0] * 0.55, 0.38),
+          lecternHalfHeight,
+          Math.max(box.args[2] * 0.55, 0.38),
         ],
-        position: box.position,
+        position: [
+          center.x,
+          lecternBounds.min.y + lecternHalfHeight,
+          center.z,
+        ],
       });
+
+      lecternInteractPoint = new Vector3(
+        center.x,
+        lecternBounds.min.y + lecternHeight * 0.72,
+        center.z,
+      );
     }
   }
 
   if (lecternBoxes.length === 0 && lecternColliders.children.length === 0) {
     lecternBoxes.push({
-      args: [0.5, 0.85, 0.5],
-      position: [0, 0.85, -12.5],
+      args: [0.38, 0.32, 0.38],
+      position: [0, 0.32, -12.5],
     });
+    lecternInteractPoint = new Vector3(0, 0.62, -12.5);
   }
 
   const floorMesh = source.getObjectByName("Lobby_Floor_Walls");
@@ -415,15 +435,6 @@ function prepareRoomContent(source: Object3D): PreparedRoom {
     : new Box3().setFromObject(source);
 
   const baseboardBoxes = buildPerimeterBaseboardBoxes(floorBounds);
-
-  const lecternInteractPoint =
-    lecternBoxes.length > 0
-      ? new Vector3(
-          lecternBoxes[0].position[0],
-          lecternBoxes[0].position[1] + lecternBoxes[0].args[1],
-          lecternBoxes[0].position[2],
-        )
-      : null;
 
   const prepared: PreparedRoom = {
     room: source,

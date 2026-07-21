@@ -65,18 +65,20 @@ export function LecternInteractPrompt() {
         lecternInteractPoint.z,
       ]}
       center
-      distanceFactor={16}
+      distanceFactor={64}
       zIndexRange={[30, 0]}
       style={{ pointerEvents: "none" }}
     >
       <div
-        className="flex items-center gap-1.5 whitespace-nowrap rounded border border-amber-200 bg-amber-50 px-2 py-1 shadow-md"
-        style={{ transform: "translateY(calc(-100% - 4px))" }}
+        className="flex origin-bottom items-center gap-1 whitespace-nowrap rounded border border-amber-200 bg-amber-50 px-1.5 py-0.5 shadow-sm"
+        style={{ transform: "translateY(-2px)" }}
       >
-        <div className="flex h-6 w-6 items-center justify-center rounded border border-amber-300 bg-white text-xs font-semibold text-stone-800">
+        <div className="flex h-5 w-5 items-center justify-center rounded border border-amber-300 bg-white text-[10px] font-semibold leading-none text-stone-800">
           F
         </div>
-        <span className="text-xs font-medium text-stone-800">Interact</span>
+        <span className="text-[10px] font-medium leading-none text-stone-800">
+          Interact
+        </span>
       </div>
     </Html>
   );
