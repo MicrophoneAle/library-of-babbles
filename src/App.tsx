@@ -429,7 +429,7 @@ function LobbyRoom() {
   const setFloorSurfaceY = useGameStore((state) => state.setFloorSurfaceY);
 
   useEffect(() => {
-    useLobbyLoadStore.getState().finish();
+    void useLobbyLoadStore.getState().finish();
   }, [gltf]);
 
   const layout = useMemo(() => {

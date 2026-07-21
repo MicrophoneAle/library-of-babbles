@@ -1,7 +1,12 @@
-import { useLoader } from "@react-three/fiber";
+import { suspend } from "suspend-react";
 import { DRACOLoader, GLTFLoader, MeshoptDecoder } from "three-stdlib";
+import type { GLTF } from "three-stdlib";
 
-import { useLobbyLoadStore } from "../store/lobbyLoadStore";
+import {
+  concatResponseBody,
+  resolveAssetByteLength,
+  useLobbyLoadStore,
+} from "../store/lobbyLoadStore";
 
 let dracoLoader: DRACOLoader | null = null;
 
@@ -18,16 +23,40 @@ function configureLobbyLoader(loader: GLTFLoader) {
   );
 }
 
-export function useLobbyGLTF(url: string) {
-  const state = useLobbyLoadStore.getState();
-  if (!state.isLoading) {
-    state.begin(url);
+function parseLobbyGltf(data: ArrayBuffer): Promise<GLTF> {
+  return new Promise((resolve, reject) => {
+    const loader = new GLTFLoader();
+    configureLobbyLoader(loader);
+    loader.parse(
+      data,
+      "",
+      (gltf) => {
+        resolve(gltf);
+      },
+      reject,
+    );
+  });
+}
+
+async function loadLobbyGltf(url: string): Promise<GLTF> {
+  const store = useLobbyLoadStore.getState();
+  store.begin();
+
+  const response = await fetch(url);
+  if (!response.ok) {
+    throw new Error(`Could not load ${url}: HTTP ${response.status}`);
   }
 
-  return useLoader(
-    GLTFLoader,
-    url,
-    configureLobbyLoader,
-    (event) => useLobbyLoadStore.getState().reportProgress(event),
-  );
+  const totalBytes = await resolveAssetByteLength(url, response);
+  if (totalBytes > 0) {
+    store.setTotalBytes(totalBytes);
+  }
+
+  const data = await concatResponseBody(response);
+  store.setParsing();
+  return parseLobbyGltf(data);
+}
+
+export function useLobbyGLTF(url: string) {
+  return suspend(loadLobbyGltf, [url]);
 }
