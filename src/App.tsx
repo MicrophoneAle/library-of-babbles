@@ -19,11 +19,12 @@ import {
   Object3D,
   Quaternion,
   Vector3,
+  type BufferGeometry,
 } from "three";
 
 import { useGameStore, type MoveSpeedMode } from "./store/gameStore";
 
-useGLTF.preload("/assets/lobby/room_lobby.glb?v=20260721b");
+useGLTF.preload("/assets/lobby/room_lobby.glb?v=20260721c");
 
 const MOVE_SPEED_SLOW = 1.75;
 const MOVE_SPEED_MEDIUM = 3.5;
@@ -220,6 +221,23 @@ function boxFromObject(object: Object3D, minHalf = 0.25): CuboidBox | null {
   };
 }
 
+/** Bake a mesh's vertices into world space so colliders don't depend on
+ *  decomposing nested non-uniform Sketchfab scales (which silently breaks). */
+function bakeMeshWorldGeometry(mesh: Mesh): Mesh {
+  mesh.updateWorldMatrix(true, false);
+  const geometry = mesh.geometry.clone() as BufferGeometry;
+  geometry.applyMatrix4(mesh.matrixWorld);
+  if (geometry.attributes.position) {
+    geometry.computeBoundingBox();
+    geometry.computeBoundingSphere();
+  }
+  const baked = new Mesh(geometry);
+  baked.name = `${mesh.name || "mesh"}_worldCollider`;
+  baked.visible = false;
+  baked.frustumCulled = false;
+  return baked;
+}
+
 function prepareRoomContent(source: Object3D) {
   const room = source.clone(true);
   room.updateMatrixWorld(true);
@@ -283,21 +301,44 @@ function prepareRoomContent(source: Object3D) {
   });
 
   // Lectern: empty lectern_HP* stubs; visible mesh under Sketchfab_model.001.
+  // Nested Sketchfab scales break TRS baking, so we bake geometry into world
+  // space and also keep a padded cuboid as a solid fallback.
   const lecternRoot =
     room.getObjectByName("Sketchfab_model.001") ??
     room.getObjectByName("lectern_HP");
-  const lecternMeshes: Object3D[] = [];
+  const lecternColliders = new Group();
+  lecternColliders.name = "LecternColliders";
+  const lecternBoxes: CuboidBox[] = [];
+
   if (lecternRoot) {
+    lecternRoot.updateWorldMatrix(true, true);
     lecternRoot.traverse((object) => {
-      if ((object as Mesh).isMesh) {
-        lecternMeshes.push(object);
+      const mesh = object as Mesh;
+      if (!mesh.isMesh) {
+        return;
       }
+      lecternColliders.add(bakeMeshWorldGeometry(mesh));
     });
+
+    const box = boxFromObject(lecternRoot, 0.45);
+    if (box) {
+      lecternBoxes.push({
+        args: [
+          Math.max(box.args[0], 0.5),
+          Math.max(box.args[1], 0.85),
+          Math.max(box.args[2], 0.5),
+        ],
+        position: box.position,
+      });
+    }
   }
-  for (const mesh of lecternMeshes) {
-    staticColliders.add(
-      makeInvisibleColliderClone(cloneWithWorldTransform(mesh)),
-    );
+
+  // Absolute fallback if hierarchy lookup fails but we know the prop is near spawn.
+  if (lecternBoxes.length === 0 && lecternColliders.children.length === 0) {
+    lecternBoxes.push({
+      args: [0.5, 0.85, 0.5],
+      position: [0, 0.85, -12.5],
+    });
   }
 
   sketchfab?.parent?.remove(sketchfab);
@@ -309,24 +350,7 @@ function prepareRoomContent(source: Object3D) {
     ? new Box3().setFromObject(floorMesh)
     : new Box3().setFromObject(room);
 
-  // Perimeter cuboids so thin baseboard geometry can't be tunneled.
   const baseboardBoxes = buildPerimeterBaseboardBoxes(floorBounds);
-
-  // Padded lectern cuboid on top of the trimesh.
-  const lecternBoxes: CuboidBox[] = [];
-  if (lecternRoot) {
-    const box = boxFromObject(lecternRoot, 0.4);
-    if (box) {
-      lecternBoxes.push({
-        args: [
-          Math.max(box.args[0], 0.45),
-          Math.max(box.args[1], 0.8),
-          Math.max(box.args[2], 0.45),
-        ],
-        position: box.position,
-      });
-    }
-  }
 
   return {
     room,
@@ -334,11 +358,12 @@ function prepareRoomContent(source: Object3D) {
     floorBounds,
     baseboardBoxes,
     lecternBoxes,
+    lecternColliders,
   };
 }
 
 function LobbyRoom() {
-  const { scene } = useGLTF("/assets/lobby/room_lobby.glb?v=20260721b");
+  const { scene } = useGLTF("/assets/lobby/room_lobby.glb?v=20260721c");
   const setSpawnPoint = useGameStore((state) => state.setSpawnPoint);
   const setFloorSurfaceY = useGameStore((state) => state.setFloorSurfaceY);
 
@@ -368,6 +393,7 @@ function LobbyRoom() {
       staticColliders: prepared.staticColliders,
       baseboardBoxes: prepared.baseboardBoxes,
       lecternBoxes: prepared.lecternBoxes,
+      lecternColliders: prepared.lecternColliders,
       center,
       floorSize,
       floorSurfaceY,
@@ -404,14 +430,27 @@ function LobbyRoom() {
             position={box.position}
           />
         ))}
+      </RigidBody>
+      {/* Lectern: dedicated body with padded cuboid + world-baked hull/trimesh. */}
+      <RigidBody type="fixed" colliders={false} friction={1}>
         {layout.lecternBoxes.map((box, index) => (
           <CuboidCollider
-            key={`lectern-${index}`}
+            key={`lectern-box-${index}`}
             args={box.args}
             position={box.position}
           />
         ))}
       </RigidBody>
+      {layout.lecternColliders.children.length > 0 ? (
+        <RigidBody
+          type="fixed"
+          colliders="trimesh"
+          friction={1}
+          includeInvisible
+        >
+          <primitive object={layout.lecternColliders} />
+        </RigidBody>
+      ) : null}
       {/* includeInvisible is required: the collider clones' meshes are
           visible=false, and rapier skips invisible meshes by default. */}
       <RigidBody
