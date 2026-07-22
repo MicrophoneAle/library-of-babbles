@@ -50,6 +50,11 @@ export type InteractPromptDefinition = {
   facingDotThreshold: number;
   /** Extra world-space height above the anchor point. */
   worldLift: number;
+  /**
+   * When true (default), the prompt faces the camera fully and pitches with
+   * the player's head. When false, yaw-only billboard (stays upright).
+   */
+  trackHead: boolean;
   dimensions: InteractPromptDimensions;
   colors: InteractPromptColors;
 };
@@ -76,14 +81,22 @@ export const DEFAULT_INTERACT_PROMPT_COLORS: InteractPromptColors = {
   text: "#292524", // stone-800
 };
 
+/** Default: prompts tilt to face the player's head. */
+export const DEFAULT_INTERACT_PROMPT_TRACK_HEAD = true;
+
 export function createInteractPrompt(
-  partial: Omit<InteractPromptDefinition, "dimensions" | "colors"> & {
+  partial: Omit<
+    InteractPromptDefinition,
+    "dimensions" | "colors" | "trackHead"
+  > & {
     dimensions?: Partial<InteractPromptDimensions>;
     colors?: Partial<InteractPromptColors>;
+    trackHead?: boolean;
   },
 ): InteractPromptDefinition {
   return {
     ...partial,
+    trackHead: partial.trackHead ?? DEFAULT_INTERACT_PROMPT_TRACK_HEAD,
     dimensions: {
       ...DEFAULT_INTERACT_PROMPT_DIMENSIONS,
       ...partial.dimensions,

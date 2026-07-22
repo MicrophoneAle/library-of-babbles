@@ -21,7 +21,9 @@ type WorldInteractPromptProps = {
 
 /**
  * Place near any asset: pass a prompt definition + world position.
- * Handles range, look-at facing, head-tracked billboard, and interact key.
+ * Handles range, look-at facing, billboard orientation, and interact key.
+ * Head tracking (pitch + yaw toward the camera) is on by default via
+ * `prompt.trackHead` from `createInteractPrompt`.
  */
 export function WorldInteractPrompt({
   prompt,
@@ -75,8 +77,12 @@ export function WorldInteractPrompt({
       position.y + prompt.worldLift,
       position.z,
     );
-    // Face the camera fully so the prompt pitches with the player's head.
-    group.lookAt(camera.position);
+
+    if (prompt.trackHead) {
+      group.lookAt(camera.position);
+    } else {
+      group.lookAt(camera.position.x, group.position.y, camera.position.z);
+    }
   });
 
   useEffect(() => {
