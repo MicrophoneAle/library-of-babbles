@@ -24,14 +24,12 @@ import {
   type Material,
 } from "three";
 
+import { LecternPopup } from "./components/lobby/LecternPopup";
+import { WorldInteractPrompt } from "./components/interact/WorldInteractPrompt";
+import { LECTERN_INTERACT_PROMPT } from "./config/interactPrompts";
 import { useGameStore, type MoveSpeedMode } from "./store/gameStore";
 import { useLobbyGLTF } from "./hooks/useLobbyGLTF";
 import { useLobbyLoadStore } from "./store/lobbyLoadStore";
-import {
-  LecternInteractionUI,
-  LecternInteractPrompt,
-  LecternInteractTracker,
-} from "./components/lobby/LecternInteraction";
 
 const LOBBY_GLB = "/assets/lobby/room_lobby_textured_walls.glb";
 
@@ -838,6 +836,16 @@ class SceneErrorBoundary extends Component<
   }
 }
 
+function LecternWorldPrompt() {
+  const lecternInteractPoint = useGameStore((state) => state.lecternInteractPoint);
+  return (
+    <WorldInteractPrompt
+      prompt={LECTERN_INTERACT_PROMPT}
+      position={lecternInteractPoint}
+    />
+  );
+}
+
 function Scene() {
   return (
     <>
@@ -849,8 +857,7 @@ function Scene() {
           <LobbyRoom />
         </Suspense>
       </SceneErrorBoundary>
-      <LecternInteractTracker />
-      <LecternInteractPrompt />
+      <LecternWorldPrompt />
       <Player />
     </>
   );
@@ -1052,7 +1059,7 @@ export default function App() {
         <MovementKeys />
       </div>
       <LobbyLoadingOverlay />
-      <LecternInteractionUI />
+      <LecternPopup />
     </div>
   );
 }

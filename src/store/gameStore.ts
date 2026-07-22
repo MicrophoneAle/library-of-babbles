@@ -5,40 +5,21 @@ export type MoveSpeedMode = "slow" | "medium" | "fast";
 
 const SPEED_ORDER: MoveSpeedMode[] = ["slow", "medium", "fast"];
 
-export type LecternPrompt = {
-  visible: boolean;
-  screenX: number;
-  screenY: number;
-  /** Degrees — horizontal yaw so the prompt faces the player. */
-  facingYaw: number;
-};
-
 interface GameState {
   currentRoom: string;
   spawnPoint: Vector3;
   spawnYaw: number;
   floorSurfaceY: number;
   moveSpeedMode: MoveSpeedMode;
+  /** World anchor for the lobby lectern interact prompt. */
   lecternInteractPoint: Vector3 | null;
-  lecternPrompt: LecternPrompt;
-  lecternPopupOpen: boolean;
   setSpawnPoint: (point: Vector3, yaw?: number) => void;
   setFloorSurfaceY: (y: number) => void;
   setMoveSpeedMode: (mode: MoveSpeedMode) => void;
   setLecternInteractPoint: (point: Vector3 | null) => void;
-  setLecternPrompt: (prompt: LecternPrompt) => void;
-  openLecternPopup: () => void;
-  closeLecternPopup: () => void;
   /** C → one step slower. V → one step faster. */
   adjustMoveSpeed: (direction: "slower" | "faster") => void;
 }
-
-const HIDDEN_PROMPT: LecternPrompt = {
-  visible: false,
-  screenX: 0,
-  screenY: 0,
-  facingYaw: 0,
-};
 
 export const useGameStore = create<GameState>((set, get) => ({
   currentRoom: "lobby",
@@ -47,32 +28,12 @@ export const useGameStore = create<GameState>((set, get) => ({
   floorSurfaceY: 0,
   moveSpeedMode: "medium",
   lecternInteractPoint: null,
-  lecternPrompt: HIDDEN_PROMPT,
-  lecternPopupOpen: false,
   setSpawnPoint: (point, yaw = 0) =>
     set({ spawnPoint: point.clone(), spawnYaw: yaw }),
   setFloorSurfaceY: (y) => set({ floorSurfaceY: y }),
   setMoveSpeedMode: (mode) => set({ moveSpeedMode: mode }),
   setLecternInteractPoint: (point) =>
     set({ lecternInteractPoint: point ? point.clone() : null }),
-  setLecternPrompt: (prompt) =>
-    set((state) => {
-      const prev = state.lecternPrompt;
-      if (
-        prev.visible === prompt.visible &&
-        Math.abs(prev.screenX - prompt.screenX) < 0.5 &&
-        Math.abs(prev.screenY - prompt.screenY) < 0.5 &&
-        Math.abs(prev.facingYaw - prompt.facingYaw) < 0.5
-      ) {
-        return state;
-      }
-      return { lecternPrompt: prompt };
-    }),
-  openLecternPopup: () => {
-    document.exitPointerLock();
-    set({ lecternPopupOpen: true, lecternPrompt: HIDDEN_PROMPT });
-  },
-  closeLecternPopup: () => set({ lecternPopupOpen: false }),
   adjustMoveSpeed: (direction) => {
     const current = get().moveSpeedMode;
     const index = SPEED_ORDER.indexOf(current);
