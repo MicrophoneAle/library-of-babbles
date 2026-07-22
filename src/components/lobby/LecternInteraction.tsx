@@ -1,14 +1,18 @@
 import { useFrame, useThree } from "@react-three/fiber";
 import { motion } from "framer-motion";
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { Vector3 } from "three";
 
 import { useGameStore } from "../../store/gameStore";
 
 const INTERACT_DISTANCE = 2.75;
 const FACING_DOT_THRESHOLD = 0.45;
-/** Fixed pixel offset: place the prompt just above the projected lectern point. */
-const PROMPT_OFFSET_Y = 28;
+/** Extra screen pixels above the projected lectern-top anchor. */
+const PROMPT_OFFSET_Y = 10;
+
+/** Locked pixel size — never scales with distance or FOV. */
+const PROMPT_FONT_PX = 12;
+const KEY_SIZE_PX = 22;
 
 const lecternWorld = new Vector3();
 const toLectern = new Vector3();
@@ -23,7 +27,7 @@ export function LecternInteractTracker() {
   const lecternInteractPoint = useGameStore((state) => state.lecternInteractPoint);
   const lecternPopupOpen = useGameStore((state) => state.lecternPopupOpen);
   const setLecternPrompt = useGameStore((state) => state.setLecternPrompt);
-  const { camera, size } = useThree();
+  const { camera, gl } = useThree();
 
   useFrame(() => {
     if (!lecternInteractPoint || lecternPopupOpen) {
@@ -47,14 +51,15 @@ export function LecternInteractTracker() {
     }
 
     projected.copy(lecternWorld).project(camera);
-    // Behind camera or outside NDC
     if (projected.z > 1 || projected.z < -1) {
       setLecternPrompt({ visible: false, screenX: 0, screenY: 0 });
       return;
     }
 
-    const screenX = (projected.x * 0.5 + 0.5) * size.width;
-    const screenY = (-projected.y * 0.5 + 0.5) * size.height;
+    // Use the canvas CSS box so coordinates match the overlay parent.
+    const rect = gl.domElement.getBoundingClientRect();
+    const screenX = (projected.x * 0.5 + 0.5) * rect.width;
+    const screenY = (-projected.y * 0.5 + 0.5) * rect.height;
 
     setLecternPrompt({
       visible: true,
@@ -72,6 +77,7 @@ export function LecternInteractionUI() {
   const lecternPopupOpen = useGameStore((state) => state.lecternPopupOpen);
   const openLecternPopup = useGameStore((state) => state.openLecternPopup);
   const closeLecternPopup = useGameStore((state) => state.closeLecternPopup);
+  const promptRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -94,18 +100,40 @@ export function LecternInteractionUI() {
     <>
       {lecternPrompt.visible && !lecternPopupOpen ? (
         <div
+          ref={promptRef}
           className="pointer-events-none absolute z-30"
           style={{
             left: lecternPrompt.screenX,
             top: lecternPrompt.screenY - PROMPT_OFFSET_Y,
             transform: "translate(-50%, -100%)",
+            // Lock size so nothing inherits scale from 3D / browser zoom quirks.
+            zoom: 1,
           }}
         >
-          <div className="flex items-center gap-1.5 whitespace-nowrap rounded border border-amber-200 bg-amber-50 px-2 py-1 shadow-md">
-            <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded border border-amber-300 bg-white text-xs font-semibold text-stone-800">
+          <div
+            className="flex items-center gap-1.5 whitespace-nowrap rounded border border-amber-200 bg-amber-50 shadow-md"
+            style={{
+              padding: "4px 8px",
+              fontSize: PROMPT_FONT_PX,
+              lineHeight: 1,
+            }}
+          >
+            <div
+              className="flex shrink-0 items-center justify-center rounded border border-amber-300 bg-white font-semibold text-stone-800"
+              style={{
+                width: KEY_SIZE_PX,
+                height: KEY_SIZE_PX,
+                fontSize: PROMPT_FONT_PX,
+              }}
+            >
               F
             </div>
-            <span className="text-xs font-medium text-stone-800">Interact</span>
+            <span
+              className="font-medium text-stone-800"
+              style={{ fontSize: PROMPT_FONT_PX }}
+            >
+              Interact
+            </span>
           </div>
         </div>
       ) : null}

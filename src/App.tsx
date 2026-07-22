@@ -236,6 +236,7 @@ function downscaleLargeTextures(root: Object3D, maxSize: number) {
 }
 
 type PreparedRoom = {
+  revision: number;
   room: Object3D;
   staticColliders: Group;
   floorBounds: Box3;
@@ -244,6 +245,9 @@ type PreparedRoom = {
   lecternColliders: Group;
   lecternInteractPoint: Vector3 | null;
 };
+
+/** Bump when prepareRoomContent layout logic changes so WeakMap cache invalidates. */
+const ROOM_PREPARE_REVISION = 4;
 
 const preparedRooms = new WeakMap<Object3D, PreparedRoom>();
 
@@ -314,7 +318,7 @@ function bakeMeshWorldGeometry(mesh: Mesh): Mesh {
 
 function prepareRoomContent(source: Object3D): PreparedRoom {
   const cached = preparedRooms.get(source);
-  if (cached) {
+  if (cached && cached.revision === ROOM_PREPARE_REVISION) {
     return cached;
   }
 
@@ -414,7 +418,7 @@ function prepareRoomContent(source: Object3D): PreparedRoom {
 
       lecternInteractPoint = new Vector3(
         center.x,
-        lecternBounds.min.y + lecternHeight * 0.72,
+        lecternBounds.max.y + 0.12,
         center.z,
       );
     }
@@ -425,7 +429,7 @@ function prepareRoomContent(source: Object3D): PreparedRoom {
       args: [0.38, 0.32, 0.38],
       position: [0, 0.32, -12.5],
     });
-    lecternInteractPoint = new Vector3(0, 0.62, -12.5);
+    lecternInteractPoint = new Vector3(0, 1.05, -12.5);
   }
 
   const floorMesh = source.getObjectByName("Lobby_Floor_Walls");
@@ -436,6 +440,7 @@ function prepareRoomContent(source: Object3D): PreparedRoom {
   const baseboardBoxes = buildPerimeterBaseboardBoxes(floorBounds);
 
   const prepared: PreparedRoom = {
+    revision: ROOM_PREPARE_REVISION,
     room: source,
     staticColliders,
     floorBounds,
