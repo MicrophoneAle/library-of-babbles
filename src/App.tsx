@@ -25,8 +25,12 @@ import {
 } from "three";
 
 import { LecternPopup } from "./components/lobby/LecternPopup";
+import { ReceptionDeskPopup } from "./components/lobby/ReceptionDeskPopup";
 import { WorldInteractPrompt } from "./components/interact/WorldInteractPrompt";
-import { LECTERN_INTERACT_PROMPT } from "./config/interactPrompts";
+import {
+  LECTERN_INTERACT_PROMPT,
+  RECEPTION_DESK_INTERACT_PROMPT,
+} from "./config/interactPrompts";
 import { useGameStore, type MoveSpeedMode } from "./store/gameStore";
 import { useLobbyGLTF } from "./hooks/useLobbyGLTF";
 import { useLobbyLoadStore } from "./store/lobbyLoadStore";
@@ -273,10 +277,11 @@ type PreparedRoom = {
   lecternBoxes: CuboidBox[];
   lecternColliders: Group;
   lecternInteractPoint: Vector3 | null;
+  receptionDeskInteractPoint: Vector3 | null;
 };
 
 /** Bump when prepareRoomContent layout logic changes so WeakMap cache invalidates. */
-const ROOM_PREPARE_REVISION = 18;
+const ROOM_PREPARE_REVISION = 19;
 
 const preparedRooms = new WeakMap<Object3D, PreparedRoom>();
 
@@ -401,9 +406,23 @@ function prepareRoomContent(source: Object3D): PreparedRoom {
     });
   }
 
+  let receptionDeskInteractPoint: Vector3 | null = null;
   for (const root of deskRoots) {
     root.updateWorldMatrix(true, true);
     staticColliders.add(cloneColliderSubtree(root));
+
+    if (!receptionDeskInteractPoint) {
+      const deskBounds = new Box3().setFromObject(root);
+      if (!deskBounds.isEmpty()) {
+        const center = deskBounds.getCenter(new Vector3());
+        // Front faces approach from stairs (-Z): above the near rim.
+        receptionDeskInteractPoint = new Vector3(
+          center.x,
+          deskBounds.max.y + 0.25,
+          deskBounds.min.z + 0.45,
+        );
+      }
+    }
   }
 
   source.traverse((object) => {
@@ -494,6 +513,7 @@ function prepareRoomContent(source: Object3D): PreparedRoom {
     lecternBoxes,
     lecternColliders,
     lecternInteractPoint,
+    receptionDeskInteractPoint,
   };
   preparedRooms.set(source, prepared);
   return prepared;
@@ -506,6 +526,9 @@ function LobbyRoom() {
   const setFloorSurfaceY = useGameStore((state) => state.setFloorSurfaceY);
   const setLecternInteractPoint = useGameStore(
     (state) => state.setLecternInteractPoint,
+  );
+  const setReceptionDeskInteractPoint = useGameStore(
+    (state) => state.setReceptionDeskInteractPoint,
   );
 
   useEffect(() => {
@@ -540,6 +563,7 @@ function LobbyRoom() {
       lecternBoxes: prepared.lecternBoxes,
       lecternColliders: prepared.lecternColliders,
       lecternInteractPoint: prepared.lecternInteractPoint,
+      receptionDeskInteractPoint: prepared.receptionDeskInteractPoint,
       center,
       floorSize,
       floorSurfaceY,
@@ -552,14 +576,17 @@ function LobbyRoom() {
     setFloorSurfaceY(layout.floorSurfaceY);
     setSpawnPoint(layout.spawnPoint, layout.spawnYaw);
     setLecternInteractPoint(layout.lecternInteractPoint);
+    setReceptionDeskInteractPoint(layout.receptionDeskInteractPoint);
   }, [
     layout.floorSurfaceY,
     layout.spawnPoint,
     layout.spawnYaw,
     layout.lecternInteractPoint,
+    layout.receptionDeskInteractPoint,
     setFloorSurfaceY,
     setSpawnPoint,
     setLecternInteractPoint,
+    setReceptionDeskInteractPoint,
   ]);
 
   return (
@@ -940,6 +967,18 @@ function LecternWorldPrompt() {
   );
 }
 
+function ReceptionDeskWorldPrompt() {
+  const receptionDeskInteractPoint = useGameStore(
+    (state) => state.receptionDeskInteractPoint,
+  );
+  return (
+    <WorldInteractPrompt
+      prompt={RECEPTION_DESK_INTERACT_PROMPT}
+      position={receptionDeskInteractPoint}
+    />
+  );
+}
+
 function Scene() {
   return (
     <>
@@ -952,6 +991,7 @@ function Scene() {
         </Suspense>
       </SceneErrorBoundary>
       <LecternWorldPrompt />
+      <ReceptionDeskWorldPrompt />
       <Player />
     </>
   );
@@ -1171,6 +1211,7 @@ export default function App() {
       </div>
       <LobbyLoadingOverlay />
       <LecternPopup />
+      <ReceptionDeskPopup />
     </div>
   );
 }

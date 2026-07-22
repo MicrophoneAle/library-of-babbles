@@ -13,10 +13,13 @@ interface GameState {
   moveSpeedMode: MoveSpeedMode;
   /** World anchor for the lobby lectern interact prompt. */
   lecternInteractPoint: Vector3 | null;
+  /** World anchor for the reception desk front interact prompt. */
+  receptionDeskInteractPoint: Vector3 | null;
   setSpawnPoint: (point: Vector3, yaw?: number) => void;
   setFloorSurfaceY: (y: number) => void;
   setMoveSpeedMode: (mode: MoveSpeedMode) => void;
   setLecternInteractPoint: (point: Vector3 | null) => void;
+  setReceptionDeskInteractPoint: (point: Vector3 | null) => void;
   /** C → one step slower. V → one step faster. */
   adjustMoveSpeed: (direction: "slower" | "faster") => void;
 }
@@ -28,12 +31,15 @@ export const useGameStore = create<GameState>((set, get) => ({
   floorSurfaceY: 0,
   moveSpeedMode: "medium",
   lecternInteractPoint: null,
+  receptionDeskInteractPoint: null,
   setSpawnPoint: (point, yaw = 0) =>
     set({ spawnPoint: point.clone(), spawnYaw: yaw }),
   setFloorSurfaceY: (y) => set({ floorSurfaceY: y }),
   setMoveSpeedMode: (mode) => set({ moveSpeedMode: mode }),
   setLecternInteractPoint: (point) =>
     set({ lecternInteractPoint: point ? point.clone() : null }),
+  setReceptionDeskInteractPoint: (point) =>
+    set({ receptionDeskInteractPoint: point ? point.clone() : null }),
   adjustMoveSpeed: (direction) => {
     const current = get().moveSpeedMode;
     const index = SPEED_ORDER.indexOf(current);
