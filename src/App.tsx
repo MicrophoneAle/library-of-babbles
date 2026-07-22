@@ -270,14 +270,13 @@ type PreparedRoom = {
   staticColliders: Group;
   floorBounds: Box3;
   baseboardBoxes: CuboidBox[];
-  furnitureBoxes: CuboidBox[];
   lecternBoxes: CuboidBox[];
   lecternColliders: Group;
   lecternInteractPoint: Vector3 | null;
 };
 
 /** Bump when prepareRoomContent layout logic changes so WeakMap cache invalidates. */
-const ROOM_PREPARE_REVISION = 14;
+const ROOM_PREPARE_REVISION = 15;
 
 const preparedRooms = new WeakMap<Object3D, PreparedRoom>();
 
@@ -389,8 +388,7 @@ function prepareRoomContent(source: Object3D): PreparedRoom {
     staticColliders.add(cloneColliderSubtree(wallsMesh));
   }
 
-  // Reception desk — merged single mesh (Reception_Desk_Lobby).
-  const furnitureBoxes: CuboidBox[] = [];
+  // Reception desk — trimesh only so the circular loop stays walkable inside.
   const deskRoots: Object3D[] = [];
   const namedDesk = source.getObjectByName("Reception_Desk_Lobby");
   if (namedDesk) {
@@ -406,22 +404,6 @@ function prepareRoomContent(source: Object3D): PreparedRoom {
   for (const root of deskRoots) {
     root.updateWorldMatrix(true, true);
     staticColliders.add(cloneColliderSubtree(root));
-
-    const bounds = new Box3().setFromObject(root);
-    if (bounds.isEmpty()) {
-      continue;
-    }
-    const size = bounds.getSize(new Vector3());
-    const center = bounds.getCenter(new Vector3());
-    const halfH = Math.max(size.y * 0.5, 0.4);
-    furnitureBoxes.push({
-      args: [
-        Math.max(size.x * 0.5 * 0.92, 0.4),
-        halfH,
-        Math.max(size.z * 0.5 * 0.92, 0.4),
-      ],
-      position: [center.x, center.y, center.z],
-    });
   }
 
   source.traverse((object) => {
@@ -479,10 +461,10 @@ function prepareRoomContent(source: Object3D): PreparedRoom {
         position: [box.position[0], box.position[1], box.position[2]],
       });
 
-      // Slightly above mesh top; screen offset raises the prompt further.
+      // Above mesh top; worldLift raises the prompt further toward eye level.
       lecternInteractPoint = new Vector3(
         center.x,
-        lecternBounds.max.y + 0.15,
+        lecternBounds.max.y + 0.45,
         center.z,
       );
     }
@@ -493,7 +475,7 @@ function prepareRoomContent(source: Object3D): PreparedRoom {
       args: [0.45, 0.75, 0.45],
       position: [0, 0.75, -12.5],
     });
-    lecternInteractPoint = new Vector3(0, 1.5, -12.5);
+    lecternInteractPoint = new Vector3(0, 2.2, -12.5);
   }
 
   const floorMesh = source.getObjectByName("Lobby_Floor_Walls");
@@ -509,7 +491,6 @@ function prepareRoomContent(source: Object3D): PreparedRoom {
     staticColliders,
     floorBounds,
     baseboardBoxes,
-    furnitureBoxes,
     lecternBoxes,
     lecternColliders,
     lecternInteractPoint,
@@ -556,7 +537,6 @@ function LobbyRoom() {
       room: prepared.room,
       staticColliders: prepared.staticColliders,
       baseboardBoxes: prepared.baseboardBoxes,
-      furnitureBoxes: prepared.furnitureBoxes,
       lecternBoxes: prepared.lecternBoxes,
       lecternColliders: prepared.lecternColliders,
       lecternInteractPoint: prepared.lecternInteractPoint,
@@ -606,18 +586,6 @@ function LobbyRoom() {
           />
         ))}
       </RigidBody>
-      {/* Reception desk: solid cuboid + trimesh from Reception_Desk_Lobby. */}
-      {layout.furnitureBoxes.length > 0 ? (
-        <RigidBody type="fixed" colliders={false} friction={1}>
-          {layout.furnitureBoxes.map((box, index) => (
-            <CuboidCollider
-              key={`furniture-box-${index}`}
-              args={box.args}
-              position={box.position}
-            />
-          ))}
-        </RigidBody>
-      ) : null}
       {/* Lectern: dedicated body with padded cuboid + world-baked hull/trimesh. */}
       <RigidBody type="fixed" colliders={false} friction={1}>
         {layout.lecternBoxes.map((box, index) => (

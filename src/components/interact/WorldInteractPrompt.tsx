@@ -21,7 +21,7 @@ type WorldInteractPromptProps = {
 
 /**
  * Place near any asset: pass a prompt definition + world position.
- * Handles range, look-at facing, Y-billboard, and interact key.
+ * Handles range, look-at facing, head-tracked billboard, and interact key.
  */
 export function WorldInteractPrompt({
   prompt,
@@ -75,7 +75,8 @@ export function WorldInteractPrompt({
       position.y + prompt.worldLift,
       position.z,
     );
-    group.lookAt(camera.position.x, group.position.y, camera.position.z);
+    // Face the camera fully so the prompt pitches with the player's head.
+    group.lookAt(camera.position);
   });
 
   useEffect(() => {
