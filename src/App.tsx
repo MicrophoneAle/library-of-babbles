@@ -281,7 +281,7 @@ type PreparedRoom = {
 };
 
 /** Bump when prepareRoomContent layout logic changes so WeakMap cache invalidates. */
-const ROOM_PREPARE_REVISION = 20;
+const ROOM_PREPARE_REVISION = 21;
 
 const preparedRooms = new WeakMap<Object3D, PreparedRoom>();
 
@@ -415,11 +415,12 @@ function prepareRoomContent(source: Object3D): PreparedRoom {
       const deskBounds = new Box3().setFromObject(root);
       if (!deskBounds.isEmpty()) {
         const center = deskBounds.getCenter(new Vector3());
-        // Front faces approach from stairs (-Z); inset slightly back over the counter.
+        // Front faces approach from stairs (-Z); sit well back over the counter top.
+        const deskDepth = deskBounds.max.z - deskBounds.min.z;
         receptionDeskInteractPoint = new Vector3(
           center.x,
           deskBounds.max.y + 0.25,
-          deskBounds.min.z + 0.95,
+          deskBounds.min.z + deskDepth * 0.28,
         );
       }
     }
