@@ -183,57 +183,6 @@ function cloneColliderSubtree(source: Object3D): Group {
   return group;
 }
 
-/** Flip triangle winding so thin stair shells also block from below. */
-function flipTriangleWinding(geometry: BufferGeometry) {
-  const index = geometry.index;
-  if (index) {
-    const arr = index.array;
-    for (let i = 0; i < arr.length; i += 3) {
-      const tmp = arr[i + 1];
-      arr[i + 1] = arr[i + 2];
-      arr[i + 2] = tmp;
-    }
-    index.needsUpdate = true;
-    return;
-  }
-
-  const position = geometry.attributes.position;
-  if (!position) {
-    return;
-  }
-  const values = position.array;
-  for (let i = 0; i + 2 < position.count; i += 3) {
-    for (let component = 0; component < position.itemSize; component += 1) {
-      const a = (i + 1) * position.itemSize + component;
-      const b = (i + 2) * position.itemSize + component;
-      const tmp = values[a];
-      values[a] = values[b];
-      values[b] = tmp;
-    }
-  }
-  position.needsUpdate = true;
-}
-
-/**
- * Stairs colliders: walkable trimesh + flipped copy so undersides register hits
- * (character controllers often tunnel thin one-sided shells from below).
- * Restricted to the stair mesh only — no AABB filler volumes.
- */
-function cloneStairsColliderSubtree(source: Object3D): Group {
-  const group = new Group();
-  group.name = `${source.name || "stairs"}_collider`;
-  source.updateMatrixWorld(true);
-  source.traverse((child) => {
-    const mesh = child as Mesh;
-    if (!mesh.isMesh) {
-      return;
-    }
-    group.add(bakeMeshWorldGeometry(mesh));
-    group.add(bakeMeshWorldGeometry(mesh, { flipFaces: true }));
-  });
-  return group;
-}
-
 /** Visual-only clone for stairs extracted from the hidden Sketchfab hierarchy. */
 function cloneVisualWithWorldTransform(source: Object3D) {
   const position = new Vector3();
@@ -334,7 +283,7 @@ type PreparedRoom = {
 };
 
 /** Bump when prepareRoomContent layout logic changes so WeakMap cache invalidates. */
-const ROOM_PREPARE_REVISION = 25;
+const ROOM_PREPARE_REVISION = 26;
 
 const preparedRooms = new WeakMap<Object3D, PreparedRoom>();
 
@@ -388,24 +337,16 @@ function boxFromObject(object: Object3D, minHalf = 0.25): CuboidBox | null {
 
 /** Bake a mesh's vertices into world space so colliders don't depend on
  *  decomposing nested non-uniform Sketchfab scales (which silently breaks). */
-function bakeMeshWorldGeometry(
-  mesh: Mesh,
-  options?: { flipFaces?: boolean },
-): Mesh {
+function bakeMeshWorldGeometry(mesh: Mesh): Mesh {
   mesh.updateWorldMatrix(true, false);
   const geometry = mesh.geometry.clone() as BufferGeometry;
   geometry.applyMatrix4(mesh.matrixWorld);
-  if (options?.flipFaces) {
-    flipTriangleWinding(geometry);
-  }
   if (geometry.attributes.position) {
     geometry.computeBoundingBox();
     geometry.computeBoundingSphere();
   }
   const baked = new Mesh(geometry);
-  baked.name = `${mesh.name || "mesh"}_worldCollider${
-    options?.flipFaces ? "_flip" : ""
-  }`;
+  baked.name = `${mesh.name || "mesh"}_worldCollider`;
   baked.visible = false;
   baked.frustumCulled = false;
   return baked;
@@ -433,8 +374,8 @@ function prepareRoomContent(source: Object3D): PreparedRoom {
       forceOpaqueMaterials(stairs);
       source.add(stairs);
     }
-    // Mesh-only colliders (walkable + flipped undersides) — no AABB overfill.
-    staticColliders.add(cloneStairsColliderSubtree(stairsSource));
+    // Same as before: geometry-only trimesh for climbing via character autostep.
+    staticColliders.add(cloneColliderSubtree(stairsSource));
   }
 
   for (const sketchfabName of ["Sketchfab_model", "Sketchfab_model.002"]) {
