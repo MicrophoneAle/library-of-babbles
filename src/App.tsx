@@ -55,9 +55,10 @@ const AUTO_STEP_MAX_HEIGHT = 1.0;
 const AUTO_STEP_MIN_WIDTH = 0.08;
 const CHARACTER_OFFSET = 0.04;
 const MAX_SLOPE_CLIMB_DEG = 60;
-const STANDING_EYE_HEIGHT = 1.6;
-// Total capsule height = 2 * (half height + radius) = 1.4 m, 0.4 m wide.
-const CAPSULE_HALF_HEIGHT = 0.5;
+// Avatar is 1.5× the original 1.4 m capsule (eye was 1.6 m).
+const STANDING_EYE_HEIGHT = 2.4;
+// Total capsule height = 2 * (half height + radius) = 2.1 m, 0.4 m wide.
+const CAPSULE_HALF_HEIGHT = 0.85;
 const CAPSULE_RADIUS = 0.2;
 const CAPSULE_BOTTOM_OFFSET = CAPSULE_HALF_HEIGHT + CAPSULE_RADIUS;
 const LOOK_SENSITIVITY = 0.002;
@@ -269,13 +270,14 @@ type PreparedRoom = {
   staticColliders: Group;
   floorBounds: Box3;
   baseboardBoxes: CuboidBox[];
+  furnitureBoxes: CuboidBox[];
   lecternBoxes: CuboidBox[];
   lecternColliders: Group;
   lecternInteractPoint: Vector3 | null;
 };
 
 /** Bump when prepareRoomContent layout logic changes so WeakMap cache invalidates. */
-const ROOM_PREPARE_REVISION = 12;
+const ROOM_PREPARE_REVISION = 13;
 
 const preparedRooms = new WeakMap<Object3D, PreparedRoom>();
 
@@ -387,6 +389,52 @@ function prepareRoomContent(source: Object3D): PreparedRoom {
     staticColliders.add(cloneColliderSubtree(wallsMesh));
   }
 
+  // Reception desk / extra furniture imports (Sketchfab re-exports).
+  // Thin countertop meshes get a solid cuboid so the character can't walk through.
+  const furnitureBoxes: CuboidBox[] = [];
+  const floorYForFurniture = wallsMesh
+    ? new Box3().setFromObject(wallsMesh).min.y
+    : 0;
+  const furnitureRoots = [
+    source.getObjectByName("Sketchfab_model.003"),
+    source.getObjectByName("Sketchfab_model.004"),
+  ].filter((object): object is Object3D => Boolean(object));
+
+  source.traverse((object) => {
+    if (
+      /reception|desk/i.test(object.name) &&
+      !furnitureRoots.includes(object)
+    ) {
+      furnitureRoots.push(object);
+    }
+  });
+
+  for (const root of furnitureRoots) {
+    root.updateWorldMatrix(true, true);
+    staticColliders.add(cloneColliderSubtree(root));
+
+    const bounds = new Box3().setFromObject(root);
+    if (bounds.isEmpty()) {
+      continue;
+    }
+    const size = bounds.getSize(new Vector3());
+    const center = bounds.getCenter(new Vector3());
+    // Flat tops (counter desks): fill from floor up so the volume is solid.
+    const solidBottom =
+      size.y < 0.5 ? floorYForFurniture : bounds.min.y;
+    const top = bounds.max.y;
+    const height = Math.max(top - solidBottom, 0.5);
+    const halfH = height * 0.5;
+    furnitureBoxes.push({
+      args: [
+        Math.max(size.x * 0.5 * 0.92, 0.4),
+        halfH,
+        Math.max(size.z * 0.5 * 0.92, 0.4),
+      ],
+      position: [center.x, solidBottom + halfH, center.z],
+    });
+  }
+
   source.traverse((object) => {
     if (
       object.name.includes("Column") ||
@@ -472,6 +520,7 @@ function prepareRoomContent(source: Object3D): PreparedRoom {
     staticColliders,
     floorBounds,
     baseboardBoxes,
+    furnitureBoxes,
     lecternBoxes,
     lecternColliders,
     lecternInteractPoint,
@@ -518,6 +567,7 @@ function LobbyRoom() {
       room: prepared.room,
       staticColliders: prepared.staticColliders,
       baseboardBoxes: prepared.baseboardBoxes,
+      furnitureBoxes: prepared.furnitureBoxes,
       lecternBoxes: prepared.lecternBoxes,
       lecternColliders: prepared.lecternColliders,
       lecternInteractPoint: prepared.lecternInteractPoint,
@@ -567,6 +617,18 @@ function LobbyRoom() {
           />
         ))}
       </RigidBody>
+      {/* Reception desk / furniture: solid cuboids (thin tops alone are easy to clip). */}
+      {layout.furnitureBoxes.length > 0 ? (
+        <RigidBody type="fixed" colliders={false} friction={1}>
+          {layout.furnitureBoxes.map((box, index) => (
+            <CuboidCollider
+              key={`furniture-box-${index}`}
+              args={box.args}
+              position={box.position}
+            />
+          ))}
+        </RigidBody>
+      ) : null}
       {/* Lectern: dedicated body with padded cuboid + world-baked hull/trimesh. */}
       <RigidBody type="fixed" colliders={false} friction={1}>
         {layout.lecternBoxes.map((box, index) => (
