@@ -277,7 +277,7 @@ type PreparedRoom = {
 };
 
 /** Bump when prepareRoomContent layout logic changes so WeakMap cache invalidates. */
-const ROOM_PREPARE_REVISION = 13;
+const ROOM_PREPARE_REVISION = 14;
 
 const preparedRooms = new WeakMap<Object3D, PreparedRoom>();
 
@@ -389,27 +389,21 @@ function prepareRoomContent(source: Object3D): PreparedRoom {
     staticColliders.add(cloneColliderSubtree(wallsMesh));
   }
 
-  // Reception desk / extra furniture imports (Sketchfab re-exports).
-  // Thin countertop meshes get a solid cuboid so the character can't walk through.
+  // Reception desk — merged single mesh (Reception_Desk_Lobby).
   const furnitureBoxes: CuboidBox[] = [];
-  const floorYForFurniture = wallsMesh
-    ? new Box3().setFromObject(wallsMesh).min.y
-    : 0;
-  const furnitureRoots = [
-    source.getObjectByName("Sketchfab_model.003"),
-    source.getObjectByName("Sketchfab_model.004"),
-  ].filter((object): object is Object3D => Boolean(object));
+  const deskRoots: Object3D[] = [];
+  const namedDesk = source.getObjectByName("Reception_Desk_Lobby");
+  if (namedDesk) {
+    deskRoots.push(namedDesk);
+  } else {
+    source.traverse((object) => {
+      if (/^Reception_Desk/i.test(object.name) && !deskRoots.includes(object)) {
+        deskRoots.push(object);
+      }
+    });
+  }
 
-  source.traverse((object) => {
-    if (
-      /reception|desk/i.test(object.name) &&
-      !furnitureRoots.includes(object)
-    ) {
-      furnitureRoots.push(object);
-    }
-  });
-
-  for (const root of furnitureRoots) {
+  for (const root of deskRoots) {
     root.updateWorldMatrix(true, true);
     staticColliders.add(cloneColliderSubtree(root));
 
@@ -419,19 +413,14 @@ function prepareRoomContent(source: Object3D): PreparedRoom {
     }
     const size = bounds.getSize(new Vector3());
     const center = bounds.getCenter(new Vector3());
-    // Flat tops (counter desks): fill from floor up so the volume is solid.
-    const solidBottom =
-      size.y < 0.5 ? floorYForFurniture : bounds.min.y;
-    const top = bounds.max.y;
-    const height = Math.max(top - solidBottom, 0.5);
-    const halfH = height * 0.5;
+    const halfH = Math.max(size.y * 0.5, 0.4);
     furnitureBoxes.push({
       args: [
         Math.max(size.x * 0.5 * 0.92, 0.4),
         halfH,
         Math.max(size.z * 0.5 * 0.92, 0.4),
       ],
-      position: [center.x, solidBottom + halfH, center.z],
+      position: [center.x, center.y, center.z],
     });
   }
 
@@ -617,7 +606,7 @@ function LobbyRoom() {
           />
         ))}
       </RigidBody>
-      {/* Reception desk / furniture: solid cuboids (thin tops alone are easy to clip). */}
+      {/* Reception desk: solid cuboid + trimesh from Reception_Desk_Lobby. */}
       {layout.furnitureBoxes.length > 0 ? (
         <RigidBody type="fixed" colliders={false} friction={1}>
           {layout.furnitureBoxes.map((box, index) => (
