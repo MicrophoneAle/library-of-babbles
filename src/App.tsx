@@ -116,21 +116,45 @@ function useKeyboard() {
 }
 
 function findStairsNode(root: Object3D) {
-  let stairs: Object3D | null = null;
+  let best: Object3D | null = null;
+  let bestScore = -1;
 
   root.traverse((object) => {
+    const { name } = object;
+    if (name === "Lobby_Stairs_Visual") {
+      return;
+    }
     if (
-      object.name === "Lobby_Stairs001" ||
-      object.name === "Lobby_Stairs.001" ||
-      object.name === "Lobby_Stairs"
+      name !== "Lobby_Stairs" &&
+      name !== "Lobby_Stairs.001" &&
+      name !== "Lobby_Stairs001" &&
+      !/^Lobby_Stairs/i.test(name)
     ) {
-      if (!stairs || (object as Object3D & { isMesh?: boolean }).isMesh) {
-        stairs = object;
+      return;
+    }
+
+    let score = 0;
+    const mesh = object as Mesh;
+    if (mesh.isMesh) {
+      score += 10;
+    }
+    // Prefer the concrete mesh import (e.g. Lobby_Stairs.001) over empty stubs.
+    if (/\.001$|001$/.test(name)) {
+      score += 5;
+    }
+    object.traverse((child) => {
+      if (child !== object && (child as Mesh).isMesh) {
+        score += 1;
       }
+    });
+
+    if (score > bestScore) {
+      bestScore = score;
+      best = object;
     }
   });
 
-  return stairs;
+  return best;
 }
 
 /** Geometry-only collider subtree — avoids duplicating 8K PBR textures. */
@@ -246,7 +270,7 @@ type PreparedRoom = {
 };
 
 /** Bump when prepareRoomContent layout logic changes so WeakMap cache invalidates. */
-const ROOM_PREPARE_REVISION = 11;
+const ROOM_PREPARE_REVISION = 12;
 
 const preparedRooms = new WeakMap<Object3D, PreparedRoom>();
 
@@ -327,19 +351,25 @@ function prepareRoomContent(source: Object3D): PreparedRoom {
 
   const staticColliders = new Group();
 
-  const sketchfab = source.getObjectByName("Sketchfab_model");
-  if (sketchfab) {
-    sketchfab.visible = false;
-  }
-
-  const stairsSource = sketchfab ? findStairsNode(sketchfab) : findStairsNode(source);
+  // Stair meshes may live under Sketchfab_model or Sketchfab_model.002 (re-exports).
+  // Prefer the best mesh in the whole room, then hide the import roots (not the lectern).
+  const stairsSource = findStairsNode(source);
   if (stairsSource) {
     if (!source.getObjectByName("Lobby_Stairs_Visual")) {
       const stairs = cloneVisualWithWorldTransform(stairsSource);
       stairs.name = "Lobby_Stairs_Visual";
+      forceOpaqueMaterials(stairs);
       source.add(stairs);
     }
+    // Same as before: geometry-only trimesh for climbing via character autostep.
     staticColliders.add(cloneColliderSubtree(stairsSource));
+  }
+
+  for (const sketchfabName of ["Sketchfab_model", "Sketchfab_model.002"]) {
+    const sketchfab = source.getObjectByName(sketchfabName);
+    if (sketchfab) {
+      sketchfab.visible = false;
+    }
   }
 
   const elevatedFloor = source.getObjectByName("Lobby_Elevated_Floor");
