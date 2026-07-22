@@ -217,6 +217,7 @@ function flipTriangleWinding(geometry: BufferGeometry) {
 /**
  * Stairs colliders: walkable trimesh + flipped copy so undersides register hits
  * (character controllers often tunnel thin one-sided shells from below).
+ * Restricted to the stair mesh only — no AABB filler volumes.
  */
 function cloneStairsColliderSubtree(source: Object3D): Group {
   const group = new Group();
@@ -231,50 +232,6 @@ function cloneStairsColliderSubtree(source: Object3D): Group {
     group.add(bakeMeshWorldGeometry(mesh, { flipFaces: true }));
   });
   return group;
-}
-
-/**
- * Solid stepped volumes under the stair run so the undercroft isn't walkable
- * through gaps in the mesh. Tops stay below the approximate tread line.
- */
-function buildStairsUndersideBoxes(
-  stairsBounds: Box3,
-  floorY: number,
-  slices = 16,
-  treadClearance = 0.9,
-): CuboidBox[] {
-  const min = stairsBounds.min;
-  const max = stairsBounds.max;
-  const depth = max.z - min.z;
-  const rise = max.y - min.y;
-  if (depth < 0.2 || rise < 0.2) {
-    return [];
-  }
-
-  const cx = (min.x + max.x) * 0.5;
-  const halfX = Math.max((max.x - min.x) * 0.45, 1);
-  const boxes: CuboidBox[] = [];
-
-  for (let i = 0; i < slices; i += 1) {
-    const t0 = i / slices;
-    const t1 = (i + 1) / slices;
-    const z0 = min.z + depth * t0;
-    const z1 = min.z + depth * t1;
-    // Stairs climb toward +Z / the mezzanine.
-    const surfaceY = min.y + rise * t1;
-    const top = surfaceY - treadClearance;
-    if (top <= floorY + 0.2) {
-      continue;
-    }
-    const halfH = (top - floorY) * 0.5;
-    const halfZ = Math.max((z1 - z0) * 0.5, 0.05);
-    boxes.push({
-      args: [halfX, halfH, halfZ],
-      position: [cx, floorY + halfH, (z0 + z1) * 0.5],
-    });
-  }
-
-  return boxes;
 }
 
 /** Visual-only clone for stairs extracted from the hidden Sketchfab hierarchy. */
@@ -370,7 +327,6 @@ type PreparedRoom = {
   staticColliders: Group;
   floorBounds: Box3;
   baseboardBoxes: CuboidBox[];
-  stairsUndersideBoxes: CuboidBox[];
   lecternBoxes: CuboidBox[];
   lecternColliders: Group;
   lecternInteractPoint: Vector3 | null;
@@ -378,7 +334,7 @@ type PreparedRoom = {
 };
 
 /** Bump when prepareRoomContent layout logic changes so WeakMap cache invalidates. */
-const ROOM_PREPARE_REVISION = 24;
+const ROOM_PREPARE_REVISION = 25;
 
 const preparedRooms = new WeakMap<Object3D, PreparedRoom>();
 
@@ -467,14 +423,8 @@ function prepareRoomContent(source: Object3D): PreparedRoom {
 
   const staticColliders = new Group();
 
-  const wallsMesh = source.getObjectByName("Lobby_Floor_Walls");
-  const floorYForStairs = wallsMesh
-    ? new Box3().setFromObject(wallsMesh).min.y
-    : 0;
-
   // Stair meshes may live under Sketchfab_model or Sketchfab_model.002 (re-exports).
   // Prefer the best mesh in the whole room, then hide the import roots (not the lectern).
-  const stairsUndersideBoxes: CuboidBox[] = [];
   const stairsSource = findStairsNode(source);
   if (stairsSource) {
     if (!source.getObjectByName("Lobby_Stairs_Visual")) {
@@ -483,14 +433,8 @@ function prepareRoomContent(source: Object3D): PreparedRoom {
       forceOpaqueMaterials(stairs);
       source.add(stairs);
     }
-    // Walkable trimesh + flipped faces for underside hits.
+    // Mesh-only colliders (walkable + flipped undersides) — no AABB overfill.
     staticColliders.add(cloneStairsColliderSubtree(stairsSource));
-    const stairsBounds = new Box3().setFromObject(stairsSource);
-    if (!stairsBounds.isEmpty()) {
-      stairsUndersideBoxes.push(
-        ...buildStairsUndersideBoxes(stairsBounds, floorYForStairs),
-      );
-    }
   }
 
   for (const sketchfabName of ["Sketchfab_model", "Sketchfab_model.002"]) {
@@ -505,6 +449,7 @@ function prepareRoomContent(source: Object3D): PreparedRoom {
     staticColliders.add(cloneColliderSubtree(elevatedFloor));
   }
 
+  const wallsMesh = source.getObjectByName("Lobby_Floor_Walls");
   if (wallsMesh) {
     staticColliders.add(cloneColliderSubtree(wallsMesh));
   }
@@ -627,7 +572,6 @@ function prepareRoomContent(source: Object3D): PreparedRoom {
     staticColliders,
     floorBounds,
     baseboardBoxes,
-    stairsUndersideBoxes,
     lecternBoxes,
     lecternColliders,
     lecternInteractPoint,
@@ -678,7 +622,6 @@ function LobbyRoom() {
       room: prepared.room,
       staticColliders: prepared.staticColliders,
       baseboardBoxes: prepared.baseboardBoxes,
-      stairsUndersideBoxes: prepared.stairsUndersideBoxes,
       lecternBoxes: prepared.lecternBoxes,
       lecternColliders: prepared.lecternColliders,
       lecternInteractPoint: prepared.lecternInteractPoint,
@@ -727,13 +670,6 @@ function LobbyRoom() {
         {layout.baseboardBoxes.map((box, index) => (
           <CuboidCollider
             key={`baseboard-${index}`}
-            args={box.args}
-            position={box.position}
-          />
-        ))}
-        {layout.stairsUndersideBoxes.map((box, index) => (
-          <CuboidCollider
-            key={`stairs-under-${index}`}
             args={box.args}
             position={box.position}
           />
