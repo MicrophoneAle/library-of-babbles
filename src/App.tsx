@@ -31,7 +31,7 @@ import { useGameStore, type MoveSpeedMode } from "./store/gameStore";
 import { useLobbyGLTF } from "./hooks/useLobbyGLTF";
 import { useLobbyLoadStore } from "./store/lobbyLoadStore";
 
-const LOBBY_GLB = "/assets/lobby/room_lobby_textured_walls.glb";
+const LOBBY_GLB = "/assets/lobby/room_lobby.glb";
 
 const MOVE_SPEED_SLOW = 1.75;
 const MOVE_SPEED_MEDIUM = 3.5;
