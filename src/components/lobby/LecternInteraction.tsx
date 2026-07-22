@@ -8,7 +8,7 @@ import { useGameStore } from "../../store/gameStore";
 const INTERACT_DISTANCE = 2.75;
 const FACING_DOT_THRESHOLD = 0.45;
 /** Extra screen pixels above the projected lectern-top anchor. */
-const PROMPT_OFFSET_Y = 36;
+const PROMPT_OFFSET_Y = 72;
 
 /** Locked pixel size — never scales with distance or FOV. */
 const PROMPT_FONT_PX = 12;
