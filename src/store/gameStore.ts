@@ -9,6 +9,8 @@ export type LecternPrompt = {
   visible: boolean;
   screenX: number;
   screenY: number;
+  /** Degrees — horizontal yaw so the prompt faces the player. */
+  facingYaw: number;
 };
 
 interface GameState {
@@ -31,7 +33,12 @@ interface GameState {
   adjustMoveSpeed: (direction: "slower" | "faster") => void;
 }
 
-const HIDDEN_PROMPT: LecternPrompt = { visible: false, screenX: 0, screenY: 0 };
+const HIDDEN_PROMPT: LecternPrompt = {
+  visible: false,
+  screenX: 0,
+  screenY: 0,
+  facingYaw: 0,
+};
 
 export const useGameStore = create<GameState>((set, get) => ({
   currentRoom: "lobby",
@@ -54,7 +61,8 @@ export const useGameStore = create<GameState>((set, get) => ({
       if (
         prev.visible === prompt.visible &&
         Math.abs(prev.screenX - prompt.screenX) < 0.5 &&
-        Math.abs(prev.screenY - prompt.screenY) < 0.5
+        Math.abs(prev.screenY - prompt.screenY) < 0.5 &&
+        Math.abs(prev.facingYaw - prompt.facingYaw) < 0.5
       ) {
         return state;
       }

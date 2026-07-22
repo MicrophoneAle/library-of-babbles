@@ -1,14 +1,14 @@
 import { useFrame, useThree } from "@react-three/fiber";
 import { motion } from "framer-motion";
 import { useEffect } from "react";
-import { Vector3 } from "three";
+import { MathUtils, Vector3 } from "three";
 
 import { useGameStore } from "../../store/gameStore";
 
 const INTERACT_DISTANCE = 2.75;
 const FACING_DOT_THRESHOLD = 0.35;
 /** Fixed screen pixels above the projected lectern-top point. */
-const PROMPT_OFFSET_Y = 20;
+const PROMPT_OFFSET_Y = 110;
 
 /** Locked CSS pixel size — never scales with distance. */
 const PROMPT_FONT_PX = 12;
@@ -20,8 +20,8 @@ const forward = new Vector3();
 const projected = new Vector3();
 
 /**
- * Projects the lectern TOP into screen pixels. A fixed pixel offset places the
- * prompt above it, so the label doesn't drift down when you walk closer.
+ * Projects the lectern TOP into screen pixels and computes a horizontal yaw
+ * so the prompt card faces the player.
  */
 export function LecternInteractTracker() {
   const lecternInteractPoint = useGameStore((state) => state.lecternInteractPoint);
@@ -31,7 +31,7 @@ export function LecternInteractTracker() {
 
   useFrame(() => {
     if (!lecternInteractPoint || lecternPopupOpen) {
-      setLecternPrompt({ visible: false, screenX: 0, screenY: 0 });
+      setLecternPrompt({ visible: false, screenX: 0, screenY: 0, facingYaw: 0 });
       return;
     }
 
@@ -39,20 +39,20 @@ export function LecternInteractTracker() {
     toLectern.subVectors(lecternWorld, camera.position);
     const distance = toLectern.length();
     if (distance > INTERACT_DISTANCE || distance < 0.001) {
-      setLecternPrompt({ visible: false, screenX: 0, screenY: 0 });
+      setLecternPrompt({ visible: false, screenX: 0, screenY: 0, facingYaw: 0 });
       return;
     }
 
     camera.getWorldDirection(forward);
     toLectern.normalize();
     if (forward.dot(toLectern) < FACING_DOT_THRESHOLD) {
-      setLecternPrompt({ visible: false, screenX: 0, screenY: 0 });
+      setLecternPrompt({ visible: false, screenX: 0, screenY: 0, facingYaw: 0 });
       return;
     }
 
     projected.copy(lecternWorld).project(camera);
     if (projected.z > 1 || projected.z < -1) {
-      setLecternPrompt({ visible: false, screenX: 0, screenY: 0 });
+      setLecternPrompt({ visible: false, screenX: 0, screenY: 0, facingYaw: 0 });
       return;
     }
 
@@ -60,17 +60,26 @@ export function LecternInteractTracker() {
     const screenX = (projected.x * 0.5 + 0.5) * rect.width;
     const screenY = (-projected.y * 0.5 + 0.5) * rect.height;
 
+    // Horizontal yaw so the prompt faces the player (billboard on Y).
+    const dx = camera.position.x - lecternInteractPoint.x;
+    const dz = camera.position.z - lecternInteractPoint.z;
+    const worldFacingYaw = Math.atan2(dx, dz);
+    let facingYaw = MathUtils.radToDeg(worldFacingYaw - camera.rotation.y);
+    // Keep text readable — don't flip fully edge-on.
+    facingYaw = MathUtils.clamp(facingYaw, -55, 55);
+
     setLecternPrompt({
       visible: true,
       screenX,
       screenY,
+      facingYaw,
     });
   });
 
   return null;
 }
 
-/** Fixed-size DOM overlay locked above the lectern; F key spins in place. */
+/** Fixed-size DOM overlay; yaws horizontally to face the player. */
 export function LecternInteractionUI() {
   const lecternPrompt = useGameStore((state) => state.lecternPrompt);
   const lecternPopupOpen = useGameStore((state) => state.lecternPopupOpen);
@@ -102,8 +111,8 @@ export function LecternInteractionUI() {
           style={{
             left: lecternPrompt.screenX,
             top: lecternPrompt.screenY - PROMPT_OFFSET_Y,
-            transform: "translate(-50%, -100%)",
-            width: "max-content",
+            perspective: 600,
+            transformStyle: "preserve-3d",
           }}
         >
           <div
@@ -112,24 +121,21 @@ export function LecternInteractionUI() {
               padding: "4px 8px",
               fontSize: PROMPT_FONT_PX,
               lineHeight: 1,
+              transform: `translate(-50%, -100%) rotateY(${lecternPrompt.facingYaw}deg)`,
+              transformOrigin: "center bottom",
+              backfaceVisibility: "hidden",
             }}
           >
-            <motion.div
+            <div
               className="flex shrink-0 items-center justify-center rounded border border-amber-300 bg-white font-semibold text-stone-800"
               style={{
                 width: KEY_SIZE_PX,
                 height: KEY_SIZE_PX,
                 fontSize: PROMPT_FONT_PX,
               }}
-              animate={{ rotate: 360 }}
-              transition={{
-                duration: 4,
-                ease: "linear",
-                repeat: Infinity,
-              }}
             >
               F
-            </motion.div>
+            </div>
             <span
               className="font-medium text-stone-800"
               style={{ fontSize: PROMPT_FONT_PX }}

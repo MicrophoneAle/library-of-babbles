@@ -247,7 +247,7 @@ type PreparedRoom = {
 };
 
 /** Bump when prepareRoomContent layout logic changes so WeakMap cache invalidates. */
-const ROOM_PREPARE_REVISION = 10;
+const ROOM_PREPARE_REVISION = 11;
 
 const preparedRooms = new WeakMap<Object3D, PreparedRoom>();
 
@@ -408,8 +408,12 @@ function prepareRoomContent(source: Object3D): PreparedRoom {
         position: [box.position[0], box.position[1], box.position[2]],
       });
 
-      // Anchor exactly at the lectern top; screen offset places the prompt above it.
-      lecternInteractPoint = new Vector3(center.x, lecternBounds.max.y, center.z);
+      // Slightly above mesh top; screen offset raises the prompt further.
+      lecternInteractPoint = new Vector3(
+        center.x,
+        lecternBounds.max.y + 0.15,
+        center.z,
+      );
     }
   }
 
