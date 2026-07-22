@@ -1,16 +1,16 @@
 import { useFrame, useThree } from "@react-three/fiber";
 import { motion } from "framer-motion";
-import { useEffect, useRef } from "react";
+import { useEffect } from "react";
 import { Vector3 } from "three";
 
 import { useGameStore } from "../../store/gameStore";
 
 const INTERACT_DISTANCE = 2.75;
-const FACING_DOT_THRESHOLD = 0.45;
-/** Extra screen pixels above the projected lectern-top anchor. */
-const PROMPT_OFFSET_Y = 144;
+const FACING_DOT_THRESHOLD = 0.35;
+/** Fixed screen pixels above the projected lectern-top point. */
+const PROMPT_OFFSET_Y = 20;
 
-/** Locked pixel size — never scales with distance or FOV. */
+/** Locked CSS pixel size — never scales with distance. */
 const PROMPT_FONT_PX = 12;
 const KEY_SIZE_PX = 22;
 
@@ -20,8 +20,8 @@ const forward = new Vector3();
 const projected = new Vector3();
 
 /**
- * Projects the lectern world point into fixed screen pixels each frame.
- * Visibility only — size of the DOM prompt never changes with distance.
+ * Projects the lectern TOP into screen pixels. A fixed pixel offset places the
+ * prompt above it, so the label doesn't drift down when you walk closer.
  */
 export function LecternInteractTracker() {
   const lecternInteractPoint = useGameStore((state) => state.lecternInteractPoint);
@@ -56,7 +56,6 @@ export function LecternInteractTracker() {
       return;
     }
 
-    // Use the canvas CSS box so coordinates match the overlay parent.
     const rect = gl.domElement.getBoundingClientRect();
     const screenX = (projected.x * 0.5 + 0.5) * rect.width;
     const screenY = (-projected.y * 0.5 + 0.5) * rect.height;
@@ -71,13 +70,12 @@ export function LecternInteractTracker() {
   return null;
 }
 
-/** Fixed-size DOM overlay; only left/top track the lectern. */
+/** Fixed-size DOM overlay locked above the lectern; F key spins in place. */
 export function LecternInteractionUI() {
   const lecternPrompt = useGameStore((state) => state.lecternPrompt);
   const lecternPopupOpen = useGameStore((state) => state.lecternPopupOpen);
   const openLecternPopup = useGameStore((state) => state.openLecternPopup);
   const closeLecternPopup = useGameStore((state) => state.closeLecternPopup);
-  const promptRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -100,14 +98,12 @@ export function LecternInteractionUI() {
     <>
       {lecternPrompt.visible && !lecternPopupOpen ? (
         <div
-          ref={promptRef}
           className="pointer-events-none absolute z-30"
           style={{
             left: lecternPrompt.screenX,
             top: lecternPrompt.screenY - PROMPT_OFFSET_Y,
             transform: "translate(-50%, -100%)",
-            // Lock size so nothing inherits scale from 3D / browser zoom quirks.
-            zoom: 1,
+            width: "max-content",
           }}
         >
           <div
@@ -118,16 +114,22 @@ export function LecternInteractionUI() {
               lineHeight: 1,
             }}
           >
-            <div
+            <motion.div
               className="flex shrink-0 items-center justify-center rounded border border-amber-300 bg-white font-semibold text-stone-800"
               style={{
                 width: KEY_SIZE_PX,
                 height: KEY_SIZE_PX,
                 fontSize: PROMPT_FONT_PX,
               }}
+              animate={{ rotate: 360 }}
+              transition={{
+                duration: 4,
+                ease: "linear",
+                repeat: Infinity,
+              }}
             >
               F
-            </div>
+            </motion.div>
             <span
               className="font-medium text-stone-800"
               style={{ fontSize: PROMPT_FONT_PX }}

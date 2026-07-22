@@ -247,7 +247,7 @@ type PreparedRoom = {
 };
 
 /** Bump when prepareRoomContent layout logic changes so WeakMap cache invalidates. */
-const ROOM_PREPARE_REVISION = 9;
+const ROOM_PREPARE_REVISION = 10;
 
 const preparedRooms = new WeakMap<Object3D, PreparedRoom>();
 
@@ -397,39 +397,28 @@ function prepareRoomContent(source: Object3D): PreparedRoom {
     const lecternBounds = new Box3().setFromObject(lecternRoot);
     if (box && !lecternBounds.isEmpty()) {
       const center = lecternBounds.getCenter(new Vector3());
-      const lecternHeight = lecternBounds.max.y - lecternBounds.min.y;
-      const lecternHalfHeight = Math.min(
-        Math.max(lecternHeight * 0.22, 0.32),
-        0.42,
-      );
 
+      // Full solid cuboid from the lectern AABB — short boxes let the player clip through.
       lecternBoxes.push({
         args: [
-          Math.max(box.args[0] * 0.55, 0.38),
-          lecternHalfHeight,
-          Math.max(box.args[2] * 0.55, 0.38),
+          Math.max(box.args[0] * 0.7, 0.4),
+          Math.max(box.args[1], 0.75),
+          Math.max(box.args[2] * 0.7, 0.4),
         ],
-        position: [
-          center.x,
-          lecternBounds.min.y + lecternHalfHeight,
-          center.z,
-        ],
+        position: [box.position[0], box.position[1], box.position[2]],
       });
 
-      lecternInteractPoint = new Vector3(
-        center.x,
-        lecternBounds.max.y + 3.1,
-        center.z,
-      );
+      // Anchor exactly at the lectern top; screen offset places the prompt above it.
+      lecternInteractPoint = new Vector3(center.x, lecternBounds.max.y, center.z);
     }
   }
 
   if (lecternBoxes.length === 0 && lecternColliders.children.length === 0) {
     lecternBoxes.push({
-      args: [0.38, 0.32, 0.38],
-      position: [0, 0.32, -12.5],
+      args: [0.45, 0.75, 0.45],
+      position: [0, 0.75, -12.5],
     });
-    lecternInteractPoint = new Vector3(0, 1.05, -12.5);
+    lecternInteractPoint = new Vector3(0, 1.5, -12.5);
   }
 
   const floorMesh = source.getObjectByName("Lobby_Floor_Walls");
