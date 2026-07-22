@@ -43,6 +43,7 @@ const MOVE_SPEED_BY_MODE = {
 } as const;
 const GRAVITY = -39.24; // ~4× Earth — snappy falls, less float off ledges/stairs
 const TERMINAL_VELOCITY = -28;
+const JUMP_VELOCITY = 10.5; // ~1.4 m peak height with current gravity
 const SNAP_TO_GROUND = 0.25;
 // Tuned for one tall stair riser — high enough to clear steps, low enough to
 // avoid leaping several at once and jamming.
@@ -614,6 +615,7 @@ function Player() {
   /** Vertical velocity in m/s (not displacement). */
   const vy = useRef(0);
   const isGrounded = useRef(false);
+  const jumpQueued = useRef(false);
   const moveSpeedModeRef = useRef(moveSpeedMode);
   moveSpeedModeRef.current = moveSpeedMode;
 
@@ -631,6 +633,9 @@ function Player() {
         adjustMoveSpeed("slower");
       } else if (event.code === "KeyV") {
         adjustMoveSpeed("faster");
+      } else if (event.code === "Space") {
+        event.preventDefault();
+        jumpQueued.current = true;
       }
     };
 
@@ -690,6 +695,7 @@ function Player() {
     pitch.current = 0;
     vy.current = 0;
     isGrounded.current = false;
+    jumpQueued.current = false;
     hasSpawned.current = true;
   }, [spawnPoint, spawnYaw]);
 
@@ -710,11 +716,26 @@ function Player() {
     // gravity on high-refresh displays.
     const delta = world.timestep;
 
+    if (jumpQueued.current && isGrounded.current) {
+      vy.current = JUMP_VELOCITY;
+      isGrounded.current = false;
+      jumpQueued.current = false;
+    } else {
+      jumpQueued.current = false;
+    }
+
     if (isGrounded.current) {
       vy.current = 0;
+      controller.enableSnapToGround(SNAP_TO_GROUND);
     } else {
       vy.current += GRAVITY * delta;
       vy.current = Math.max(vy.current, TERMINAL_VELOCITY);
+      // Snap would cancel the jump impulse on the first airborne frames.
+      if (vy.current > 0) {
+        controller.disableSnapToGround();
+      } else {
+        controller.enableSnapToGround(SNAP_TO_GROUND);
+      }
     }
 
     const move = moveDirection.current;
@@ -737,7 +758,7 @@ function Player() {
     });
 
     isGrounded.current = controller.computedGrounded();
-    if (isGrounded.current) {
+    if (isGrounded.current && vy.current <= 0) {
       vy.current = 0;
     }
   });
@@ -909,6 +930,7 @@ type MovementPressed = {
   back: boolean;
   left: boolean;
   right: boolean;
+  jump: boolean;
 };
 
 function useMovementPressed() {
@@ -917,6 +939,7 @@ function useMovementPressed() {
     back: false,
     left: false,
     right: false,
+    jump: false,
   });
 
   useEffect(() => {
@@ -935,6 +958,8 @@ function useMovementPressed() {
           case "KeyD":
           case "ArrowRight":
             return prev.right === value ? prev : { ...prev, right: value };
+          case "Space":
+            return prev.jump === value ? prev : { ...prev, jump: value };
           default:
             return prev;
         }
@@ -942,6 +967,9 @@ function useMovementPressed() {
     };
 
     const onKeyDown = (event: KeyboardEvent) => {
+      if (event.code === "Space") {
+        event.preventDefault();
+      }
       apply(event.code, true);
     };
 
@@ -955,6 +983,7 @@ function useMovementPressed() {
         back: false,
         left: false,
         right: false,
+        jump: false,
       });
     };
 
@@ -975,17 +1004,19 @@ function useMovementPressed() {
 function KeyCap({
   label,
   active,
+  className = "",
 }: {
   label: string;
   active: boolean;
+  className?: string;
 }) {
   return (
     <div
-      className={`flex h-9 w-9 items-center justify-center rounded border text-base font-medium transition-colors duration-75 ${
+      className={`flex h-9 items-center justify-center rounded border text-base font-medium transition-colors duration-75 ${
         active
           ? "border-white/20 bg-black/70 text-white/50"
           : "border-white/35 bg-black/30 text-white/80"
-      }`}
+      } ${className}`}
     >
       {label}
     </div>
@@ -1038,29 +1069,36 @@ function MovementKeys() {
 
   return (
     <div className="absolute bottom-6 left-6 flex items-end gap-3 select-none">
-      <div
-        className="grid gap-1"
-        style={{
-          gridTemplateColumns: "repeat(3, 2.25rem)",
-          gridTemplateRows: "repeat(2, 2.25rem)",
-          gridTemplateAreas: `
-            ".    up   ."
-            "left down right"
-          `,
-        }}
-      >
-        <div style={{ gridArea: "up" }}>
-          <KeyCap label="↑" active={pressed.forward} />
+      <div className="flex flex-col gap-1">
+        <div
+          className="grid gap-1"
+          style={{
+            gridTemplateColumns: "repeat(3, 2.25rem)",
+            gridTemplateRows: "repeat(2, 2.25rem)",
+            gridTemplateAreas: `
+              ".    up   ."
+              "left down right"
+            `,
+          }}
+        >
+          <div style={{ gridArea: "up" }}>
+            <KeyCap label="↑" active={pressed.forward} className="w-9" />
+          </div>
+          <div style={{ gridArea: "left" }}>
+            <KeyCap label="←" active={pressed.left} className="w-9" />
+          </div>
+          <div style={{ gridArea: "down" }}>
+            <KeyCap label="↓" active={pressed.back} className="w-9" />
+          </div>
+          <div style={{ gridArea: "right" }}>
+            <KeyCap label="→" active={pressed.right} className="w-9" />
+          </div>
         </div>
-        <div style={{ gridArea: "left" }}>
-          <KeyCap label="←" active={pressed.left} />
-        </div>
-        <div style={{ gridArea: "down" }}>
-          <KeyCap label="↓" active={pressed.back} />
-        </div>
-        <div style={{ gridArea: "right" }}>
-          <KeyCap label="→" active={pressed.right} />
-        </div>
+        <KeyCap
+          label="SPACE"
+          active={pressed.jump}
+          className="w-full text-xs tracking-wider"
+        />
       </div>
       <SpeedIndicator />
     </div>
