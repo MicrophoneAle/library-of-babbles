@@ -40,10 +40,12 @@ const LOBBY_GLB = "/assets/lobby/room_lobby.glb";
 const MOVE_SPEED_SLOW = 1.75;
 const MOVE_SPEED_MEDIUM = 3.5;
 const MOVE_SPEED_FAST = 5.5;
+const MOVE_SPEED_SPRINT = 8.5;
 const MOVE_SPEED_BY_MODE = {
   slow: MOVE_SPEED_SLOW,
   medium: MOVE_SPEED_MEDIUM,
   fast: MOVE_SPEED_FAST,
+  sprint: MOVE_SPEED_SPRINT,
 } as const;
 const GRAVITY = -39.24; // ~4× Earth — snappy falls, less float off ledges/stairs
 const TERMINAL_VELOCITY = -28;
@@ -1111,15 +1113,21 @@ const SPEED_LABELS: Record<MoveSpeedMode, string> = {
   slow: "SLOW",
   medium: "WALK",
   fast: "FAST",
+  sprint: "SPRINT",
 };
 
-const SPEED_DISPLAY_ORDER: MoveSpeedMode[] = ["fast", "medium", "slow"];
+const SPEED_DISPLAY_ORDER: MoveSpeedMode[] = [
+  "sprint",
+  "fast",
+  "medium",
+  "slow",
+];
 
 function SpeedIndicator() {
   const mode = useGameStore((state) => state.moveSpeedMode);
 
   return (
-    <div className="flex h-[4.75rem] flex-col justify-between rounded border border-white/35 bg-black/30 px-2.5 py-1.5">
+    <div className="flex h-[5.75rem] flex-col justify-between rounded border border-white/35 bg-black/30 px-2.5 py-1.5">
       <div className="flex flex-col gap-0.5">
         {SPEED_DISPLAY_ORDER.map((tier) => {
           const active = tier === mode;

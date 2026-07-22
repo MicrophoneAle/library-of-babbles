@@ -1,9 +1,9 @@
 import { Vector3 } from "three";
 import { create } from "zustand";
 
-export type MoveSpeedMode = "slow" | "medium" | "fast";
+export type MoveSpeedMode = "slow" | "medium" | "fast" | "sprint";
 
-const SPEED_ORDER: MoveSpeedMode[] = ["slow", "medium", "fast"];
+const SPEED_ORDER: MoveSpeedMode[] = ["slow", "medium", "fast", "sprint"];
 
 interface GameState {
   currentRoom: string;
@@ -29,7 +29,7 @@ export const useGameStore = create<GameState>((set, get) => ({
   spawnPoint: new Vector3(0, 0, 0),
   spawnYaw: 0,
   floorSurfaceY: 0,
-  moveSpeedMode: "medium",
+  moveSpeedMode: "fast",
   lecternInteractPoint: null,
   receptionDeskInteractPoint: null,
   setSpawnPoint: (point, yaw = 0) =>
