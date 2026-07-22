@@ -9,7 +9,7 @@ import { useGameStore } from "../../store/gameStore";
 const INTERACT_DISTANCE = 2.75;
 const FACING_DOT_THRESHOLD = 0.35;
 /** World-space lift above the lectern top anchor. */
-const PROMPT_WORLD_LIFT = 0.08;
+const PROMPT_WORLD_LIFT = 0.2;
 /**
  * drei Html distanceFactor — keeps on-screen size roughly constant.
  * Higher = larger prompt.
