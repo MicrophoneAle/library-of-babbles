@@ -43,7 +43,11 @@ const MOVE_SPEED_BY_MODE = {
 } as const;
 const GRAVITY = -39.24; // ~4× Earth — snappy falls, less float off ledges/stairs
 const TERMINAL_VELOCITY = -28;
-const JUMP_VELOCITY = 10.5; // ~1.4 m peak height with current gravity
+const JUMP_VELOCITY = 12; // ~1.8 m peak height with current gravity
+/** Allow jump shortly after leaving ground (helps on stairs / autostep). */
+const COYOTE_TIME = 0.14;
+/** Remember Space for a short window so brief ungrounded frames don't eat the press. */
+const JUMP_BUFFER_TIME = 0.12;
 const SNAP_TO_GROUND = 0.25;
 // Tuned for one tall stair riser — high enough to clear steps, low enough to
 // avoid leaping several at once and jamming.
@@ -616,6 +620,8 @@ function Player() {
   const vy = useRef(0);
   const isGrounded = useRef(false);
   const jumpQueued = useRef(false);
+  const coyoteTimeLeft = useRef(0);
+  const jumpBufferLeft = useRef(0);
   const moveSpeedModeRef = useRef(moveSpeedMode);
   moveSpeedModeRef.current = moveSpeedMode;
 
@@ -696,6 +702,8 @@ function Player() {
     vy.current = 0;
     isGrounded.current = false;
     jumpQueued.current = false;
+    coyoteTimeLeft.current = 0;
+    jumpBufferLeft.current = 0;
     hasSpawned.current = true;
   }, [spawnPoint, spawnYaw]);
 
@@ -716,12 +724,28 @@ function Player() {
     // gravity on high-refresh displays.
     const delta = world.timestep;
 
-    if (jumpQueued.current && isGrounded.current) {
-      vy.current = JUMP_VELOCITY;
-      isGrounded.current = false;
+    if (isGrounded.current) {
+      coyoteTimeLeft.current = COYOTE_TIME;
+    } else {
+      coyoteTimeLeft.current = Math.max(0, coyoteTimeLeft.current - delta);
+    }
+
+    if (jumpQueued.current) {
+      jumpBufferLeft.current = JUMP_BUFFER_TIME;
       jumpQueued.current = false;
     } else {
-      jumpQueued.current = false;
+      jumpBufferLeft.current = Math.max(0, jumpBufferLeft.current - delta);
+    }
+
+    // Stairs/autostep often flicker grounded off for a frame; coyote + buffer
+    // keep Space reliable while climbing.
+    const canJump = isGrounded.current || coyoteTimeLeft.current > 0;
+    if (jumpBufferLeft.current > 0 && canJump && vy.current <= 0.5) {
+      vy.current = JUMP_VELOCITY;
+      isGrounded.current = false;
+      coyoteTimeLeft.current = 0;
+      jumpBufferLeft.current = 0;
+      controller.disableSnapToGround();
     }
 
     if (isGrounded.current) {
