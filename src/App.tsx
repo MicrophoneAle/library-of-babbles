@@ -247,7 +247,7 @@ type PreparedRoom = {
 };
 
 /** Bump when prepareRoomContent layout logic changes so WeakMap cache invalidates. */
-const ROOM_PREPARE_REVISION = 4;
+const ROOM_PREPARE_REVISION = 5;
 
 const preparedRooms = new WeakMap<Object3D, PreparedRoom>();
 
@@ -418,7 +418,7 @@ function prepareRoomContent(source: Object3D): PreparedRoom {
 
       lecternInteractPoint = new Vector3(
         center.x,
-        lecternBounds.max.y + 0.12,
+        lecternBounds.max.y + 0.28,
         center.z,
       );
     }
