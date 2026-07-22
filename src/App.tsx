@@ -276,7 +276,7 @@ type PreparedRoom = {
 };
 
 /** Bump when prepareRoomContent layout logic changes so WeakMap cache invalidates. */
-const ROOM_PREPARE_REVISION = 15;
+const ROOM_PREPARE_REVISION = 16;
 
 const preparedRooms = new WeakMap<Object3D, PreparedRoom>();
 
@@ -461,10 +461,10 @@ function prepareRoomContent(source: Object3D): PreparedRoom {
         position: [box.position[0], box.position[1], box.position[2]],
       });
 
-      // Above mesh top; worldLift raises the prompt further toward eye level.
+      // Near the lectern top — keep the prompt low over the reading surface.
       lecternInteractPoint = new Vector3(
         center.x,
-        lecternBounds.max.y + 0.45,
+        lecternBounds.max.y - 0.15,
         center.z,
       );
     }
@@ -475,7 +475,7 @@ function prepareRoomContent(source: Object3D): PreparedRoom {
       args: [0.45, 0.75, 0.45],
       position: [0, 0.75, -12.5],
     });
-    lecternInteractPoint = new Vector3(0, 2.2, -12.5);
+    lecternInteractPoint = new Vector3(0, 1.35, -12.5);
   }
 
   const floorMesh = source.getObjectByName("Lobby_Floor_Walls");
