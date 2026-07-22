@@ -29,7 +29,6 @@ import { useLobbyGLTF } from "./hooks/useLobbyGLTF";
 import { useLobbyLoadStore } from "./store/lobbyLoadStore";
 import {
   LecternInteractionUI,
-  LecternInteractPrompt,
   LecternInteractTracker,
 } from "./components/lobby/LecternInteraction";
 
@@ -852,7 +851,6 @@ function Scene() {
         </Suspense>
       </SceneErrorBoundary>
       <LecternInteractTracker />
-      <LecternInteractPrompt />
       <Player />
     </>
   );

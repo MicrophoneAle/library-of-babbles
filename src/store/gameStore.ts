@@ -5,6 +5,12 @@ export type MoveSpeedMode = "slow" | "medium" | "fast";
 
 const SPEED_ORDER: MoveSpeedMode[] = ["slow", "medium", "fast"];
 
+export type LecternPrompt = {
+  visible: boolean;
+  screenX: number;
+  screenY: number;
+};
+
 interface GameState {
   currentRoom: string;
   spawnPoint: Vector3;
@@ -12,18 +18,20 @@ interface GameState {
   floorSurfaceY: number;
   moveSpeedMode: MoveSpeedMode;
   lecternInteractPoint: Vector3 | null;
-  lecternPromptVisible: boolean;
+  lecternPrompt: LecternPrompt;
   lecternPopupOpen: boolean;
   setSpawnPoint: (point: Vector3, yaw?: number) => void;
   setFloorSurfaceY: (y: number) => void;
   setMoveSpeedMode: (mode: MoveSpeedMode) => void;
   setLecternInteractPoint: (point: Vector3 | null) => void;
-  setLecternPromptVisible: (visible: boolean) => void;
+  setLecternPrompt: (prompt: LecternPrompt) => void;
   openLecternPopup: () => void;
   closeLecternPopup: () => void;
   /** C → one step slower. V → one step faster. */
   adjustMoveSpeed: (direction: "slower" | "faster") => void;
 }
+
+const HIDDEN_PROMPT: LecternPrompt = { visible: false, screenX: 0, screenY: 0 };
 
 export const useGameStore = create<GameState>((set, get) => ({
   currentRoom: "lobby",
@@ -32,7 +40,7 @@ export const useGameStore = create<GameState>((set, get) => ({
   floorSurfaceY: 0,
   moveSpeedMode: "medium",
   lecternInteractPoint: null,
-  lecternPromptVisible: false,
+  lecternPrompt: HIDDEN_PROMPT,
   lecternPopupOpen: false,
   setSpawnPoint: (point, yaw = 0) =>
     set({ spawnPoint: point.clone(), spawnYaw: yaw }),
@@ -40,15 +48,21 @@ export const useGameStore = create<GameState>((set, get) => ({
   setMoveSpeedMode: (mode) => set({ moveSpeedMode: mode }),
   setLecternInteractPoint: (point) =>
     set({ lecternInteractPoint: point ? point.clone() : null }),
-  setLecternPromptVisible: (visible) =>
-    set((state) =>
-      state.lecternPromptVisible === visible
-        ? state
-        : { lecternPromptVisible: visible },
-    ),
+  setLecternPrompt: (prompt) =>
+    set((state) => {
+      const prev = state.lecternPrompt;
+      if (
+        prev.visible === prompt.visible &&
+        Math.abs(prev.screenX - prompt.screenX) < 0.5 &&
+        Math.abs(prev.screenY - prompt.screenY) < 0.5
+      ) {
+        return state;
+      }
+      return { lecternPrompt: prompt };
+    }),
   openLecternPopup: () => {
     document.exitPointerLock();
-    set({ lecternPopupOpen: true, lecternPromptVisible: false });
+    set({ lecternPopupOpen: true, lecternPrompt: HIDDEN_PROMPT });
   },
   closeLecternPopup: () => set({ lecternPopupOpen: false }),
   adjustMoveSpeed: (direction) => {
