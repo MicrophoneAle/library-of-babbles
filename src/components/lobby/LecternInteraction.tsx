@@ -14,7 +14,7 @@ const PROMPT_WORLD_LIFT = 0.55;
  * drei Html distanceFactor — keeps on-screen size roughly constant.
  * Higher = larger prompt.
  */
-const PROMPT_DISTANCE_FACTOR = 5.5;
+const PROMPT_DISTANCE_FACTOR = 1.8;
 
 const lecternWorld = new Vector3();
 const toLectern = new Vector3();
@@ -78,9 +78,7 @@ export function LecternInteractPrompt() {
     );
 
     // Y-axis billboard: face the camera horizontally, stay upright.
-    // lookAt aims local -Z at the target; Html content faces +Z, so flip 180°.
     group.lookAt(camera.position.x, group.position.y, camera.position.z);
-    group.rotateY(Math.PI);
   });
 
   if (!lecternInteractPoint || !lecternPrompt.visible || lecternPopupOpen) {
