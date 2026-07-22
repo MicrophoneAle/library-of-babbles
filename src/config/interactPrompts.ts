@@ -8,7 +8,7 @@ export const LECTERN_INTERACT_PROMPT = createInteractPrompt({
   label: "Interact",
   interactDistance: 2.75,
   facingDotThreshold: 0.35,
-  worldLift: 0.12,
+  worldLift: 0.19,
   dimensions: {
     distanceFactor: 1.8,
   },

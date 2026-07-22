@@ -276,7 +276,7 @@ type PreparedRoom = {
 };
 
 /** Bump when prepareRoomContent layout logic changes so WeakMap cache invalidates. */
-const ROOM_PREPARE_REVISION = 17;
+const ROOM_PREPARE_REVISION = 18;
 
 const preparedRooms = new WeakMap<Object3D, PreparedRoom>();
 
@@ -464,7 +464,7 @@ function prepareRoomContent(source: Object3D): PreparedRoom {
       // Just above the lectern reading surface.
       lecternInteractPoint = new Vector3(
         center.x,
-        lecternBounds.max.y + 0.05,
+        lecternBounds.max.y + 0.25,
         center.z,
       );
     }
@@ -475,7 +475,7 @@ function prepareRoomContent(source: Object3D): PreparedRoom {
       args: [0.45, 0.75, 0.45],
       position: [0, 0.75, -12.5],
     });
-    lecternInteractPoint = new Vector3(0, 1.55, -12.5);
+    lecternInteractPoint = new Vector3(0, 1.75, -12.5);
   }
 
   const floorMesh = source.getObjectByName("Lobby_Floor_Walls");
