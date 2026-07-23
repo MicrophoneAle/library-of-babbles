@@ -276,6 +276,7 @@ type PreparedRoom = {
   staticColliders: Group;
   floorBounds: Box3;
   baseboardBoxes: CuboidBox[];
+  doorBoxes: CuboidBox[];
   lecternBoxes: CuboidBox[];
   lecternColliders: Group;
   lecternInteractPoint: Vector3 | null;
@@ -283,7 +284,7 @@ type PreparedRoom = {
 };
 
 /** Bump when prepareRoomContent layout logic changes so WeakMap cache invalidates. */
-const ROOM_PREPARE_REVISION = 26;
+const ROOM_PREPARE_REVISION = 27;
 
 const preparedRooms = new WeakMap<Object3D, PreparedRoom>();
 
@@ -428,6 +429,43 @@ function prepareRoomContent(source: Object3D): PreparedRoom {
     }
   }
 
+  // Front/back entrance double doors — trimesh + solid cuboid (thin shells clip easily).
+  const doorBoxes: CuboidBox[] = [];
+  const doorRoots: Object3D[] = [];
+  for (const name of ["EntranceDoorsFrame", "EntranceDoorsFrame.001"]) {
+    const door = source.getObjectByName(name);
+    if (door) {
+      doorRoots.push(door);
+    }
+  }
+  if (doorRoots.length === 0) {
+    source.traverse((object) => {
+      if (
+        /^EntranceDoorsFrame/i.test(object.name) &&
+        !doorRoots.includes(object)
+      ) {
+        doorRoots.push(object);
+      }
+    });
+  }
+
+  for (const root of doorRoots) {
+    root.updateWorldMatrix(true, true);
+    staticColliders.add(cloneColliderSubtree(root));
+    const box = boxFromObject(root, 0.35);
+    if (!box) {
+      continue;
+    }
+    doorBoxes.push({
+      args: [
+        Math.max(box.args[0] * 0.95, 0.5),
+        Math.max(box.args[1] * 0.95, 1),
+        Math.max(box.args[2], 0.35),
+      ],
+      position: box.position,
+    });
+  }
+
   source.traverse((object) => {
     if (
       object.name.includes("Column") ||
@@ -513,6 +551,7 @@ function prepareRoomContent(source: Object3D): PreparedRoom {
     staticColliders,
     floorBounds,
     baseboardBoxes,
+    doorBoxes,
     lecternBoxes,
     lecternColliders,
     lecternInteractPoint,
@@ -563,6 +602,7 @@ function LobbyRoom() {
       room: prepared.room,
       staticColliders: prepared.staticColliders,
       baseboardBoxes: prepared.baseboardBoxes,
+      doorBoxes: prepared.doorBoxes,
       lecternBoxes: prepared.lecternBoxes,
       lecternColliders: prepared.lecternColliders,
       lecternInteractPoint: prepared.lecternInteractPoint,
@@ -616,6 +656,18 @@ function LobbyRoom() {
           />
         ))}
       </RigidBody>
+      {/* Entrance double doors (front + back): solid cuboids seal thin shells. */}
+      {layout.doorBoxes.length > 0 ? (
+        <RigidBody type="fixed" colliders={false} friction={1}>
+          {layout.doorBoxes.map((box, index) => (
+            <CuboidCollider
+              key={`door-box-${index}`}
+              args={box.args}
+              position={box.position}
+            />
+          ))}
+        </RigidBody>
+      ) : null}
       {/* Lectern: dedicated body with padded cuboid + world-baked hull/trimesh. */}
       <RigidBody type="fixed" colliders={false} friction={1}>
         {layout.lecternBoxes.map((box, index) => (
