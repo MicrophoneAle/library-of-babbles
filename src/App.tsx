@@ -280,8 +280,8 @@ type PreparedRoom = {
   floorBounds: Box3;
   baseboardBoxes: CuboidBox[];
   doorBoxes: CuboidBox[];
+  columnBoxes: CuboidBox[];
   lecternBoxes: CuboidBox[];
-  lecternColliders: Group;
   lecternInteractPoint: Vector3 | null;
   receptionDeskInteractPoint: Vector3 | null;
   backDoorInteractPoint: Vector3 | null;
@@ -289,7 +289,7 @@ type PreparedRoom = {
 };
 
 /** Bump when prepareRoomContent layout logic changes so WeakMap cache invalidates. */
-const ROOM_PREPARE_REVISION = 28;
+const ROOM_PREPARE_REVISION = 29;
 
 const preparedRooms = new WeakMap<Object3D, PreparedRoom>();
 
@@ -490,12 +490,21 @@ function prepareRoomContent(source: Object3D): PreparedRoom {
     }
   }
 
+  const columnBoxes: CuboidBox[] = [];
   source.traverse((object) => {
     if (
       object.name.includes("Column") ||
       object.name.startsWith("Cylinder")
     ) {
-      staticColliders.add(cloneColliderSubtree(object));
+      const box = boxFromObject(object, 0.6);
+      if (!box) {
+        return;
+      }
+      // Slightly shrink X/Z so movement around columns still feels natural.
+      columnBoxes.push({
+        args: [box.args[0] * 0.9, box.args[1], box.args[2] * 0.9],
+        position: box.position,
+      });
     }
   });
 
@@ -516,20 +525,11 @@ function prepareRoomContent(source: Object3D): PreparedRoom {
   const lecternRoot =
     source.getObjectByName("Sketchfab_model.001") ??
     source.getObjectByName("lectern_HP");
-  const lecternColliders = new Group();
-  lecternColliders.name = "LecternColliders";
   const lecternBoxes: CuboidBox[] = [];
   let lecternInteractPoint: Vector3 | null = null;
 
   if (lecternRoot) {
     lecternRoot.updateWorldMatrix(true, true);
-    lecternRoot.traverse((object) => {
-      const mesh = object as Mesh;
-      if (mesh.isMesh) {
-        lecternColliders.add(bakeMeshWorldGeometry(mesh));
-      }
-    });
-
     const box = boxFromObject(lecternRoot, 0.45);
     const lecternBounds = new Box3().setFromObject(lecternRoot);
     if (box && !lecternBounds.isEmpty()) {
@@ -554,7 +554,7 @@ function prepareRoomContent(source: Object3D): PreparedRoom {
     }
   }
 
-  if (lecternBoxes.length === 0 && lecternColliders.children.length === 0) {
+  if (lecternBoxes.length === 0) {
     lecternBoxes.push({
       args: [0.45, 0.75, 0.45],
       position: [0, 0.75, -12.5],
@@ -576,8 +576,8 @@ function prepareRoomContent(source: Object3D): PreparedRoom {
     floorBounds,
     baseboardBoxes,
     doorBoxes,
+    columnBoxes,
     lecternBoxes,
-    lecternColliders,
     lecternInteractPoint,
     receptionDeskInteractPoint,
     backDoorInteractPoint,
@@ -635,8 +635,8 @@ function LobbyRoom() {
       staticColliders: prepared.staticColliders,
       baseboardBoxes: prepared.baseboardBoxes,
       doorBoxes: prepared.doorBoxes,
+      columnBoxes: prepared.columnBoxes,
       lecternBoxes: prepared.lecternBoxes,
-      lecternColliders: prepared.lecternColliders,
       lecternInteractPoint: prepared.lecternInteractPoint,
       receptionDeskInteractPoint: prepared.receptionDeskInteractPoint,
       backDoorInteractPoint: prepared.backDoorInteractPoint,
@@ -708,6 +708,17 @@ function LobbyRoom() {
           ))}
         </RigidBody>
       ) : null}
+      {layout.columnBoxes.length > 0 ? (
+        <RigidBody type="fixed" colliders={false} friction={1}>
+          {layout.columnBoxes.map((box, index) => (
+            <CuboidCollider
+              key={`column-box-${index}`}
+              args={box.args}
+              position={box.position}
+            />
+          ))}
+        </RigidBody>
+      ) : null}
       {/* Lectern: dedicated body with padded cuboid + world-baked hull/trimesh. */}
       <RigidBody type="fixed" colliders={false} friction={1}>
         {layout.lecternBoxes.map((box, index) => (
@@ -718,16 +729,6 @@ function LobbyRoom() {
           />
         ))}
       </RigidBody>
-      {layout.lecternColliders.children.length > 0 ? (
-        <RigidBody
-          type="fixed"
-          colliders="trimesh"
-          friction={1}
-          includeInvisible
-        >
-          <primitive object={layout.lecternColliders} />
-        </RigidBody>
-      ) : null}
       {/* includeInvisible is required: the collider clones' meshes are
           visible=false, and rapier skips invisible meshes by default. */}
       <RigidBody
