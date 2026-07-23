@@ -26,8 +26,11 @@ import {
 
 import { LecternPopup } from "./components/lobby/LecternPopup";
 import { ReceptionDeskPopup } from "./components/lobby/ReceptionDeskPopup";
+import { UnderConstructionPopup } from "./components/lobby/UnderConstructionPopup";
 import { WorldInteractPrompt } from "./components/interact/WorldInteractPrompt";
 import {
+  BACK_DOOR_INTERACT_PROMPT,
+  FRONT_DOOR_INTERACT_PROMPT,
   LECTERN_INTERACT_PROMPT,
   RECEPTION_DESK_INTERACT_PROMPT,
 } from "./config/interactPrompts";
@@ -281,10 +284,12 @@ type PreparedRoom = {
   lecternColliders: Group;
   lecternInteractPoint: Vector3 | null;
   receptionDeskInteractPoint: Vector3 | null;
+  backDoorInteractPoint: Vector3 | null;
+  frontDoorInteractPoint: Vector3 | null;
 };
 
 /** Bump when prepareRoomContent layout logic changes so WeakMap cache invalidates. */
-const ROOM_PREPARE_REVISION = 27;
+const ROOM_PREPARE_REVISION = 28;
 
 const preparedRooms = new WeakMap<Object3D, PreparedRoom>();
 
@@ -429,8 +434,11 @@ function prepareRoomContent(source: Object3D): PreparedRoom {
     }
   }
 
-  // Front/back entrance double doors — trimesh + solid cuboid (thin shells clip easily).
+  // Front/back entrance double doors.
+  // Cuboid-only: door meshes are ~250k tris each — trimesh colliders tank physics.
   const doorBoxes: CuboidBox[] = [];
+  let backDoorInteractPoint: Vector3 | null = null;
+  let frontDoorInteractPoint: Vector3 | null = null;
   const doorRoots: Object3D[] = [];
   for (const name of ["EntranceDoorsFrame", "EntranceDoorsFrame.001"]) {
     const door = source.getObjectByName(name);
@@ -451,19 +459,35 @@ function prepareRoomContent(source: Object3D): PreparedRoom {
 
   for (const root of doorRoots) {
     root.updateWorldMatrix(true, true);
-    staticColliders.add(cloneColliderSubtree(root));
-    const box = boxFromObject(root, 0.35);
-    if (!box) {
+    const bounds = new Box3().setFromObject(root);
+    if (bounds.isEmpty()) {
       continue;
     }
-    doorBoxes.push({
-      args: [
-        Math.max(box.args[0] * 0.95, 0.5),
-        Math.max(box.args[1] * 0.95, 1),
-        Math.max(box.args[2], 0.35),
-      ],
-      position: box.position,
-    });
+    const box = boxFromObject(root, 0.35);
+    if (box) {
+      doorBoxes.push({
+        args: [
+          Math.max(box.args[0] * 0.95, 0.5),
+          Math.max(box.args[1] * 0.95, 1),
+          Math.max(box.args[2], 0.35),
+        ],
+        position: box.position,
+      });
+    }
+
+    const center = bounds.getCenter(new Vector3());
+    const height = bounds.max.y - bounds.min.y;
+    const promptPoint = new Vector3(
+      center.x,
+      bounds.min.y + height * 0.75,
+      center.z,
+    );
+    // +Z mezzanine doors vs −Z ground-floor doors.
+    if (center.z >= 0) {
+      frontDoorInteractPoint = promptPoint;
+    } else {
+      backDoorInteractPoint = promptPoint;
+    }
   }
 
   source.traverse((object) => {
@@ -556,6 +580,8 @@ function prepareRoomContent(source: Object3D): PreparedRoom {
     lecternColliders,
     lecternInteractPoint,
     receptionDeskInteractPoint,
+    backDoorInteractPoint,
+    frontDoorInteractPoint,
   };
   preparedRooms.set(source, prepared);
   return prepared;
@@ -571,6 +597,12 @@ function LobbyRoom() {
   );
   const setReceptionDeskInteractPoint = useGameStore(
     (state) => state.setReceptionDeskInteractPoint,
+  );
+  const setBackDoorInteractPoint = useGameStore(
+    (state) => state.setBackDoorInteractPoint,
+  );
+  const setFrontDoorInteractPoint = useGameStore(
+    (state) => state.setFrontDoorInteractPoint,
   );
 
   useEffect(() => {
@@ -607,6 +639,8 @@ function LobbyRoom() {
       lecternColliders: prepared.lecternColliders,
       lecternInteractPoint: prepared.lecternInteractPoint,
       receptionDeskInteractPoint: prepared.receptionDeskInteractPoint,
+      backDoorInteractPoint: prepared.backDoorInteractPoint,
+      frontDoorInteractPoint: prepared.frontDoorInteractPoint,
       center,
       floorSize,
       floorSurfaceY,
@@ -620,16 +654,22 @@ function LobbyRoom() {
     setSpawnPoint(layout.spawnPoint, layout.spawnYaw);
     setLecternInteractPoint(layout.lecternInteractPoint);
     setReceptionDeskInteractPoint(layout.receptionDeskInteractPoint);
+    setBackDoorInteractPoint(layout.backDoorInteractPoint);
+    setFrontDoorInteractPoint(layout.frontDoorInteractPoint);
   }, [
     layout.floorSurfaceY,
     layout.spawnPoint,
     layout.spawnYaw,
     layout.lecternInteractPoint,
     layout.receptionDeskInteractPoint,
+    layout.backDoorInteractPoint,
+    layout.frontDoorInteractPoint,
     setFloorSurfaceY,
     setSpawnPoint,
     setLecternInteractPoint,
     setReceptionDeskInteractPoint,
+    setBackDoorInteractPoint,
+    setFrontDoorInteractPoint,
   ]);
 
   return (
@@ -1034,6 +1074,27 @@ function ReceptionDeskWorldPrompt() {
   );
 }
 
+function DoorWorldPrompts() {
+  const backDoorInteractPoint = useGameStore(
+    (state) => state.backDoorInteractPoint,
+  );
+  const frontDoorInteractPoint = useGameStore(
+    (state) => state.frontDoorInteractPoint,
+  );
+  return (
+    <>
+      <WorldInteractPrompt
+        prompt={BACK_DOOR_INTERACT_PROMPT}
+        position={backDoorInteractPoint}
+      />
+      <WorldInteractPrompt
+        prompt={FRONT_DOOR_INTERACT_PROMPT}
+        position={frontDoorInteractPoint}
+      />
+    </>
+  );
+}
+
 function Scene() {
   return (
     <>
@@ -1047,6 +1108,7 @@ function Scene() {
       </SceneErrorBoundary>
       <LecternWorldPrompt />
       <ReceptionDeskWorldPrompt />
+      <DoorWorldPrompts />
       <Player />
     </>
   );
@@ -1273,6 +1335,7 @@ export default function App() {
       <LobbyLoadingOverlay />
       <LecternPopup />
       <ReceptionDeskPopup />
+      <UnderConstructionPopup />
     </div>
   );
 }
