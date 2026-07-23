@@ -13,7 +13,9 @@ import { Suspense, Component, useEffect, useMemo, useRef, useState } from "react
 import type { KinematicCharacterController } from "@dimforge/rapier3d-compat";
 import {
   Box3,
+  BufferAttribute,
   DoubleSide,
+  FrontSide,
   Group,
   Mesh,
   Object3D,
@@ -273,6 +275,122 @@ function downscaleLargeTextures(root: Object3D, maxSize: number) {
   });
 }
 
+/**
+ * Fast triangle thinning for dense meshes. Prefer this over Melax SimplifyModifier
+ * for 100k+ tri assets — that algorithm freezes the main thread for too long.
+ * Keeps an even stride of faces so silhouette/detail density stays roughly uniform.
+ * Preserves geometry.groups so multi-material doors (wood + glass) stay correct.
+ */
+function thinIndexedGeometry(
+  geometry: BufferGeometry,
+  maxTriangles: number,
+): BufferGeometry {
+  let working = geometry.index ? geometry.clone() : geometry.toNonIndexed().clone();
+  if (!working.index) {
+    const vertCount = working.attributes.position.count;
+    const sequential = new Uint32Array(vertCount);
+    for (let i = 0; i < vertCount; i += 1) {
+      sequential[i] = i;
+    }
+    working.setIndex(new BufferAttribute(sequential, 1));
+  }
+
+  const index = working.index;
+  if (!index) {
+    return geometry;
+  }
+  const triCount = Math.floor(index.count / 3);
+  if (triCount <= maxTriangles) {
+    return working;
+  }
+
+  const groups =
+    working.groups.length > 0
+      ? working.groups.map((group) => ({
+          start: group.start,
+          count: group.count,
+          materialIndex: group.materialIndex ?? 0,
+        }))
+      : [{ start: 0, count: index.count, materialIndex: 0 }];
+
+  const nextIndices: number[] = [];
+  const nextGroups: { start: number; count: number; materialIndex: number }[] =
+    [];
+
+  for (const group of groups) {
+    const groupTris = Math.floor(group.count / 3);
+    if (groupTris <= 0) {
+      continue;
+    }
+    const budget = Math.max(
+      1,
+      Math.round((groupTris / triCount) * maxTriangles),
+    );
+    const keep = Math.min(groupTris, budget);
+    const stride = groupTris / keep;
+    const groupStart = nextIndices.length;
+    for (let i = 0; i < keep; i += 1) {
+      const t = group.start + Math.floor(i * stride) * 3;
+      nextIndices.push(index.getX(t), index.getX(t + 1), index.getX(t + 2));
+    }
+    nextGroups.push({
+      start: groupStart,
+      count: keep * 3,
+      materialIndex: group.materialIndex,
+    });
+  }
+
+  working.setIndex(new BufferAttribute(new Uint32Array(nextIndices), 1));
+  working.clearGroups();
+  for (const group of nextGroups) {
+    working.addGroup(group.start, group.count, group.materialIndex);
+  }
+  working.computeVertexNormals();
+  working.computeBoundingBox();
+  working.computeBoundingSphere();
+  return working;
+}
+
+/**
+ * Entrance doors ship at ~250k tris each. Physics already uses cuboids; this
+ * cuts GPU cost by thinning visuals + FrontSide materials + smaller textures.
+ */
+function optimizeEntranceDoorVisuals(
+  root: Object3D,
+  maxTrianglesPerMesh = 10_000,
+  maxTextureSize = 1024,
+) {
+  root.traverse((child) => {
+    const mesh = child as Mesh;
+    if (!mesh.isMesh) {
+      return;
+    }
+
+    const position = mesh.geometry.attributes.position;
+    const indexCount = mesh.geometry.index?.count ?? position?.count ?? 0;
+    const approxTris = Math.floor(indexCount / 3);
+    if (approxTris > maxTrianglesPerMesh) {
+      const previous = mesh.geometry;
+      mesh.geometry = thinIndexedGeometry(previous, maxTrianglesPerMesh);
+      previous.dispose();
+    }
+
+    const materials = Array.isArray(mesh.material)
+      ? mesh.material
+      : [mesh.material];
+    for (const material of materials) {
+      if (!material) {
+        continue;
+      }
+      // DoubleSide on 250k-tri doors roughly doubles fill cost.
+      material.side = FrontSide;
+      material.needsUpdate = true;
+    }
+  });
+
+  downscaleLargeTextures(root, maxTextureSize);
+}
+
 type PreparedRoom = {
   revision: number;
   room: Object3D;
@@ -289,7 +407,7 @@ type PreparedRoom = {
 };
 
 /** Bump when prepareRoomContent layout logic changes so WeakMap cache invalidates. */
-const ROOM_PREPARE_REVISION = 29;
+const ROOM_PREPARE_REVISION = 30;
 
 const preparedRooms = new WeakMap<Object3D, PreparedRoom>();
 
@@ -459,6 +577,9 @@ function prepareRoomContent(source: Object3D): PreparedRoom {
 
   for (const root of doorRoots) {
     root.updateWorldMatrix(true, true);
+    // Visuals: ~250k tris/door → ~10k; physics stays cheap cuboids below.
+    optimizeEntranceDoorVisuals(root);
+
     const bounds = new Box3().setFromObject(root);
     if (bounds.isEmpty()) {
       continue;
