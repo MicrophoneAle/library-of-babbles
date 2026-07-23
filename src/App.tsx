@@ -1101,7 +1101,7 @@ function KeyCap({
     <div
       className={`flex h-9 items-center justify-center rounded border text-base font-medium transition-colors duration-75 ${
         active
-          ? "border-white/20 bg-black/70 text-white/50"
+          ? "border-amber-200/90 bg-amber-100/90 text-stone-900 shadow-[0_0_12px_rgba(253,230,138,0.45)]"
           : "border-white/35 bg-black/30 text-white/80"
       } ${className}`}
     >
@@ -1175,16 +1175,16 @@ function MovementKeys() {
           }}
         >
           <div style={{ gridArea: "up" }}>
-            <KeyCap label="↑" active={pressed.forward} className="w-9" />
+            <KeyCap label="W" active={pressed.forward} className="w-9" />
           </div>
           <div style={{ gridArea: "left" }}>
-            <KeyCap label="←" active={pressed.left} className="w-9" />
+            <KeyCap label="A" active={pressed.left} className="w-9" />
           </div>
           <div style={{ gridArea: "down" }}>
-            <KeyCap label="↓" active={pressed.back} className="w-9" />
+            <KeyCap label="S" active={pressed.back} className="w-9" />
           </div>
           <div style={{ gridArea: "right" }}>
-            <KeyCap label="→" active={pressed.right} className="w-9" />
+            <KeyCap label="D" active={pressed.right} className="w-9" />
           </div>
         </div>
         <KeyCap
