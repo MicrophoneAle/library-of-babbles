@@ -27,32 +27,3 @@ export const RECEPTION_DESK_INTERACT_PROMPT = createInteractPrompt({
     distanceFactor: 2.0,
   },
 });
-
-const doorPromptDefaults = {
-  interactKey: "KeyF" as const,
-  interactKeyLabel: "F",
-  label: "Area under construction",
-  interactDistance: 4,
-  facingDotThreshold: 0.25,
-  worldLift: 0.05,
-  dimensions: {
-    distanceFactor: 2.2,
-  },
-};
-
-/** Ground-floor (−Z) entrance doors. */
-export const BACK_DOOR_INTERACT_PROMPT = createInteractPrompt({
-  id: "lobby-door-back",
-  ...doorPromptDefaults,
-});
-
-/** Mezzanine (+Z) entrance doors. */
-export const FRONT_DOOR_INTERACT_PROMPT = createInteractPrompt({
-  id: "lobby-door-front",
-  ...doorPromptDefaults,
-});
-
-export const UNDER_CONSTRUCTION_PROMPT_IDS = new Set([
-  BACK_DOOR_INTERACT_PROMPT.id,
-  FRONT_DOOR_INTERACT_PROMPT.id,
-]);

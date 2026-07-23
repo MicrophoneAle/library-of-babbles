@@ -13,9 +13,7 @@ import { Suspense, Component, useEffect, useMemo, useRef, useState } from "react
 import type { KinematicCharacterController } from "@dimforge/rapier3d-compat";
 import {
   Box3,
-  BufferAttribute,
   DoubleSide,
-  FrontSide,
   Group,
   Mesh,
   Object3D,
@@ -28,11 +26,8 @@ import {
 
 import { LecternPopup } from "./components/lobby/LecternPopup";
 import { ReceptionDeskPopup } from "./components/lobby/ReceptionDeskPopup";
-import { UnderConstructionPopup } from "./components/lobby/UnderConstructionPopup";
 import { WorldInteractPrompt } from "./components/interact/WorldInteractPrompt";
 import {
-  BACK_DOOR_INTERACT_PROMPT,
-  FRONT_DOOR_INTERACT_PROMPT,
   LECTERN_INTERACT_PROMPT,
   RECEPTION_DESK_INTERACT_PROMPT,
 } from "./config/interactPrompts";
@@ -275,139 +270,20 @@ function downscaleLargeTextures(root: Object3D, maxSize: number) {
   });
 }
 
-/**
- * Fast triangle thinning for dense meshes. Prefer this over Melax SimplifyModifier
- * for 100k+ tri assets — that algorithm freezes the main thread for too long.
- * Keeps an even stride of faces so silhouette/detail density stays roughly uniform.
- * Preserves geometry.groups so multi-material doors (wood + glass) stay correct.
- */
-function thinIndexedGeometry(
-  geometry: BufferGeometry,
-  maxTriangles: number,
-): BufferGeometry {
-  let working = geometry.index ? geometry.clone() : geometry.toNonIndexed().clone();
-  if (!working.index) {
-    const vertCount = working.attributes.position.count;
-    const sequential = new Uint32Array(vertCount);
-    for (let i = 0; i < vertCount; i += 1) {
-      sequential[i] = i;
-    }
-    working.setIndex(new BufferAttribute(sequential, 1));
-  }
-
-  const index = working.index;
-  if (!index) {
-    return geometry;
-  }
-  const triCount = Math.floor(index.count / 3);
-  if (triCount <= maxTriangles) {
-    return working;
-  }
-
-  const groups =
-    working.groups.length > 0
-      ? working.groups.map((group) => ({
-          start: group.start,
-          count: group.count,
-          materialIndex: group.materialIndex ?? 0,
-        }))
-      : [{ start: 0, count: index.count, materialIndex: 0 }];
-
-  const nextIndices: number[] = [];
-  const nextGroups: { start: number; count: number; materialIndex: number }[] =
-    [];
-
-  for (const group of groups) {
-    const groupTris = Math.floor(group.count / 3);
-    if (groupTris <= 0) {
-      continue;
-    }
-    const budget = Math.max(
-      1,
-      Math.round((groupTris / triCount) * maxTriangles),
-    );
-    const keep = Math.min(groupTris, budget);
-    const stride = groupTris / keep;
-    const groupStart = nextIndices.length;
-    for (let i = 0; i < keep; i += 1) {
-      const t = group.start + Math.floor(i * stride) * 3;
-      nextIndices.push(index.getX(t), index.getX(t + 1), index.getX(t + 2));
-    }
-    nextGroups.push({
-      start: groupStart,
-      count: keep * 3,
-      materialIndex: group.materialIndex,
-    });
-  }
-
-  working.setIndex(new BufferAttribute(new Uint32Array(nextIndices), 1));
-  working.clearGroups();
-  for (const group of nextGroups) {
-    working.addGroup(group.start, group.count, group.materialIndex);
-  }
-  working.computeVertexNormals();
-  working.computeBoundingBox();
-  working.computeBoundingSphere();
-  return working;
-}
-
-/**
- * Entrance doors ship at ~250k tris each. Physics already uses cuboids; this
- * cuts GPU cost by thinning visuals + FrontSide materials + smaller textures.
- */
-function optimizeEntranceDoorVisuals(
-  root: Object3D,
-  maxTrianglesPerMesh = 10_000,
-  maxTextureSize = 1024,
-) {
-  root.traverse((child) => {
-    const mesh = child as Mesh;
-    if (!mesh.isMesh) {
-      return;
-    }
-
-    const position = mesh.geometry.attributes.position;
-    const indexCount = mesh.geometry.index?.count ?? position?.count ?? 0;
-    const approxTris = Math.floor(indexCount / 3);
-    if (approxTris > maxTrianglesPerMesh) {
-      const previous = mesh.geometry;
-      mesh.geometry = thinIndexedGeometry(previous, maxTrianglesPerMesh);
-      previous.dispose();
-    }
-
-    const materials = Array.isArray(mesh.material)
-      ? mesh.material
-      : [mesh.material];
-    for (const material of materials) {
-      if (!material) {
-        continue;
-      }
-      // DoubleSide on 250k-tri doors roughly doubles fill cost.
-      material.side = FrontSide;
-      material.needsUpdate = true;
-    }
-  });
-
-  downscaleLargeTextures(root, maxTextureSize);
-}
-
 type PreparedRoom = {
   revision: number;
   room: Object3D;
   staticColliders: Group;
   floorBounds: Box3;
   baseboardBoxes: CuboidBox[];
-  doorBoxes: CuboidBox[];
   columnBoxes: CuboidBox[];
   lecternBoxes: CuboidBox[];
   lecternInteractPoint: Vector3 | null;
   receptionDeskInteractPoint: Vector3 | null;
-  backDoorInteractPoint: Vector3 | null;
-  frontDoorInteractPoint: Vector3 | null;
 };
 
 /** Bump when prepareRoomContent layout logic changes so WeakMap cache invalidates. */
-const ROOM_PREPARE_REVISION = 30;
+const ROOM_PREPARE_REVISION = 31;
 
 const preparedRooms = new WeakMap<Object3D, PreparedRoom>();
 
@@ -552,65 +428,6 @@ function prepareRoomContent(source: Object3D): PreparedRoom {
     }
   }
 
-  // Front/back entrance double doors.
-  // Cuboid-only: door meshes are ~250k tris each — trimesh colliders tank physics.
-  const doorBoxes: CuboidBox[] = [];
-  let backDoorInteractPoint: Vector3 | null = null;
-  let frontDoorInteractPoint: Vector3 | null = null;
-  const doorRoots: Object3D[] = [];
-  for (const name of ["EntranceDoorsFrame", "EntranceDoorsFrame.001"]) {
-    const door = source.getObjectByName(name);
-    if (door) {
-      doorRoots.push(door);
-    }
-  }
-  if (doorRoots.length === 0) {
-    source.traverse((object) => {
-      if (
-        /^EntranceDoorsFrame/i.test(object.name) &&
-        !doorRoots.includes(object)
-      ) {
-        doorRoots.push(object);
-      }
-    });
-  }
-
-  for (const root of doorRoots) {
-    root.updateWorldMatrix(true, true);
-    // Visuals: ~250k tris/door → ~10k; physics stays cheap cuboids below.
-    optimizeEntranceDoorVisuals(root);
-
-    const bounds = new Box3().setFromObject(root);
-    if (bounds.isEmpty()) {
-      continue;
-    }
-    const box = boxFromObject(root, 0.35);
-    if (box) {
-      doorBoxes.push({
-        args: [
-          Math.max(box.args[0] * 0.95, 0.5),
-          Math.max(box.args[1] * 0.95, 1),
-          Math.max(box.args[2], 0.35),
-        ],
-        position: box.position,
-      });
-    }
-
-    const center = bounds.getCenter(new Vector3());
-    const height = bounds.max.y - bounds.min.y;
-    const promptPoint = new Vector3(
-      center.x,
-      bounds.min.y + height * 0.75,
-      center.z,
-    );
-    // +Z mezzanine doors vs −Z ground-floor doors.
-    if (center.z >= 0) {
-      frontDoorInteractPoint = promptPoint;
-    } else {
-      backDoorInteractPoint = promptPoint;
-    }
-  }
-
   const columnBoxes: CuboidBox[] = [];
   source.traverse((object) => {
     if (
@@ -696,13 +513,10 @@ function prepareRoomContent(source: Object3D): PreparedRoom {
     staticColliders,
     floorBounds,
     baseboardBoxes,
-    doorBoxes,
     columnBoxes,
     lecternBoxes,
     lecternInteractPoint,
     receptionDeskInteractPoint,
-    backDoorInteractPoint,
-    frontDoorInteractPoint,
   };
   preparedRooms.set(source, prepared);
   return prepared;
@@ -718,12 +532,6 @@ function LobbyRoom() {
   );
   const setReceptionDeskInteractPoint = useGameStore(
     (state) => state.setReceptionDeskInteractPoint,
-  );
-  const setBackDoorInteractPoint = useGameStore(
-    (state) => state.setBackDoorInteractPoint,
-  );
-  const setFrontDoorInteractPoint = useGameStore(
-    (state) => state.setFrontDoorInteractPoint,
   );
 
   useEffect(() => {
@@ -755,13 +563,10 @@ function LobbyRoom() {
       room: prepared.room,
       staticColliders: prepared.staticColliders,
       baseboardBoxes: prepared.baseboardBoxes,
-      doorBoxes: prepared.doorBoxes,
       columnBoxes: prepared.columnBoxes,
       lecternBoxes: prepared.lecternBoxes,
       lecternInteractPoint: prepared.lecternInteractPoint,
       receptionDeskInteractPoint: prepared.receptionDeskInteractPoint,
-      backDoorInteractPoint: prepared.backDoorInteractPoint,
-      frontDoorInteractPoint: prepared.frontDoorInteractPoint,
       center,
       floorSize,
       floorSurfaceY,
@@ -775,22 +580,16 @@ function LobbyRoom() {
     setSpawnPoint(layout.spawnPoint, layout.spawnYaw);
     setLecternInteractPoint(layout.lecternInteractPoint);
     setReceptionDeskInteractPoint(layout.receptionDeskInteractPoint);
-    setBackDoorInteractPoint(layout.backDoorInteractPoint);
-    setFrontDoorInteractPoint(layout.frontDoorInteractPoint);
   }, [
     layout.floorSurfaceY,
     layout.spawnPoint,
     layout.spawnYaw,
     layout.lecternInteractPoint,
     layout.receptionDeskInteractPoint,
-    layout.backDoorInteractPoint,
-    layout.frontDoorInteractPoint,
     setFloorSurfaceY,
     setSpawnPoint,
     setLecternInteractPoint,
     setReceptionDeskInteractPoint,
-    setBackDoorInteractPoint,
-    setFrontDoorInteractPoint,
   ]);
 
   return (
@@ -817,18 +616,6 @@ function LobbyRoom() {
           />
         ))}
       </RigidBody>
-      {/* Entrance double doors (front + back): solid cuboids seal thin shells. */}
-      {layout.doorBoxes.length > 0 ? (
-        <RigidBody type="fixed" colliders={false} friction={1}>
-          {layout.doorBoxes.map((box, index) => (
-            <CuboidCollider
-              key={`door-box-${index}`}
-              args={box.args}
-              position={box.position}
-            />
-          ))}
-        </RigidBody>
-      ) : null}
       {layout.columnBoxes.length > 0 ? (
         <RigidBody type="fixed" colliders={false} friction={1}>
           {layout.columnBoxes.map((box, index) => (
@@ -1196,27 +983,6 @@ function ReceptionDeskWorldPrompt() {
   );
 }
 
-function DoorWorldPrompts() {
-  const backDoorInteractPoint = useGameStore(
-    (state) => state.backDoorInteractPoint,
-  );
-  const frontDoorInteractPoint = useGameStore(
-    (state) => state.frontDoorInteractPoint,
-  );
-  return (
-    <>
-      <WorldInteractPrompt
-        prompt={BACK_DOOR_INTERACT_PROMPT}
-        position={backDoorInteractPoint}
-      />
-      <WorldInteractPrompt
-        prompt={FRONT_DOOR_INTERACT_PROMPT}
-        position={frontDoorInteractPoint}
-      />
-    </>
-  );
-}
-
 function Scene() {
   return (
     <>
@@ -1230,7 +996,6 @@ function Scene() {
       </SceneErrorBoundary>
       <LecternWorldPrompt />
       <ReceptionDeskWorldPrompt />
-      <DoorWorldPrompts />
       <Player />
     </>
   );
@@ -1457,7 +1222,6 @@ export default function App() {
       <LobbyLoadingOverlay />
       <LecternPopup />
       <ReceptionDeskPopup />
-      <UnderConstructionPopup />
     </div>
   );
 }

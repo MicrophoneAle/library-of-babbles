@@ -15,16 +15,11 @@ interface GameState {
   lecternInteractPoint: Vector3 | null;
   /** World anchor for the reception desk front interact prompt. */
   receptionDeskInteractPoint: Vector3 | null;
-  /** World anchors for entrance door prompts (−Z back, +Z front). */
-  backDoorInteractPoint: Vector3 | null;
-  frontDoorInteractPoint: Vector3 | null;
   setSpawnPoint: (point: Vector3, yaw?: number) => void;
   setFloorSurfaceY: (y: number) => void;
   setMoveSpeedMode: (mode: MoveSpeedMode) => void;
   setLecternInteractPoint: (point: Vector3 | null) => void;
   setReceptionDeskInteractPoint: (point: Vector3 | null) => void;
-  setBackDoorInteractPoint: (point: Vector3 | null) => void;
-  setFrontDoorInteractPoint: (point: Vector3 | null) => void;
   /** C → one step slower. V → one step faster. */
   adjustMoveSpeed: (direction: "slower" | "faster") => void;
 }
@@ -37,8 +32,6 @@ export const useGameStore = create<GameState>((set, get) => ({
   moveSpeedMode: "fast",
   lecternInteractPoint: null,
   receptionDeskInteractPoint: null,
-  backDoorInteractPoint: null,
-  frontDoorInteractPoint: null,
   setSpawnPoint: (point, yaw = 0) =>
     set({ spawnPoint: point.clone(), spawnYaw: yaw }),
   setFloorSurfaceY: (y) => set({ floorSurfaceY: y }),
@@ -47,10 +40,6 @@ export const useGameStore = create<GameState>((set, get) => ({
     set({ lecternInteractPoint: point ? point.clone() : null }),
   setReceptionDeskInteractPoint: (point) =>
     set({ receptionDeskInteractPoint: point ? point.clone() : null }),
-  setBackDoorInteractPoint: (point) =>
-    set({ backDoorInteractPoint: point ? point.clone() : null }),
-  setFrontDoorInteractPoint: (point) =>
-    set({ frontDoorInteractPoint: point ? point.clone() : null }),
   adjustMoveSpeed: (direction) => {
     const current = get().moveSpeedMode;
     const index = SPEED_ORDER.indexOf(current);
